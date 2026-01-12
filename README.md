@@ -1,7 +1,3 @@
-Here is an awesome `README.md` for your project. It highlights the privacy-first architecture, the "Zero-Cost" AI stack, and the robust LangGraph workflow.
-
-I have included a **Mermaid diagram** to visualize your agent's decision-making process.
-
 ---
 
 # 🏥 Medical AI Analytics Backend (Local & Private)
@@ -147,4 +143,5 @@ Send a POST request to `/api/query` with a JSON body: `{"question": "..."}`.
 ## 📜 License
 
 * **Code**: MIT License
+
 * **Data**: Ensure your CSV data complies with HIPAA/GDPR regulations. This tool is for analytics and research purposes.
