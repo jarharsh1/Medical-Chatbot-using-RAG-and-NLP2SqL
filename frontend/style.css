@@ -1,0 +1,74 @@
+/* Since we use Tailwind via CDN, this file is 
+   reserved for complex properties like gradients 
+   and animations that are harder to do with utility classes. 
+*/
+
+/* --- Donut Chart Gradient Fallback --- */
+/* The actual gradient is calculated in app.js based on data, 
+   but this provides a smooth transition when it updates. */
+#donut-chart {
+    transition: background 1s ease-in-out;
+    /* Default fallback before JS loads */
+    background: conic-gradient(
+        #e2e8f0 0% 100%
+    );
+}
+
+/* --- Scrollbar Styling (Chat Window) --- */
+#chat-history::-webkit-scrollbar {
+    width: 8px;
+}
+
+#chat-history::-webkit-scrollbar-track {
+    background: #f8fafc; /* slate-50 */
+    border-radius: 4px;
+}
+
+#chat-history::-webkit-scrollbar-thumb {
+    background: #cbd5e1; /* slate-300 */
+    border-radius: 4px;
+    border: 2px solid #f8fafc; /* Creates padding effect */
+}
+
+#chat-history::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8; /* slate-400 */
+}
+
+/* --- Animations --- */
+.fade-in {
+    animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Chat Message Bubble Animation */
+.message-bubble {
+    opacity: 0;
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(5px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* --- Utility for Table Rows --- */
+/* Smooth expand/collapse for patient details */
+tr.hidden {
+    display: none;
+}
