@@ -171,6 +171,18 @@
                         </tbody>
                     </table>
                 </div>
+                <!-- Pagination Controls -->
+                <div class="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
+                    <span id="page-info" class="text-sm text-slate-500 font-medium">Page 1 of 1</span>
+                    <div class="flex gap-2">
+                        <button id="btn-prev" onclick="changePage(-1)" disabled class="px-4 py-2 text-sm font-medium border border-slate-300 rounded-lg bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                            <i class="fa-solid fa-chevron-left mr-1"></i> Previous
+                        </button>
+                        <button id="btn-next" onclick="changePage(1)" class="px-4 py-2 text-sm font-medium border border-slate-300 rounded-lg bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                            Next <i class="fa-solid fa-chevron-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -189,14 +201,17 @@
                 
                 <div class="space-y-3 mt-auto mb-auto">
                     <p class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Try Asking:</p>
-                    <button onclick="fillQuery('Patients with Hypertension in NY')" class="w-full text-left text-xs bg-slate-700 p-3 rounded-lg hover:bg-slate-600 transition-all border border-slate-600 hover:border-indigo-400">
-                        "Patients with Hypertension in NY"
+                    <button onclick="fillQuery('How many active prescriptions are there?')" class="w-full text-left text-xs bg-slate-700 p-3 rounded-lg hover:bg-slate-600 transition-all border border-slate-600 hover:border-indigo-400">
+                        <span class="text-blue-400 font-bold">SQL</span> "How many active prescriptions are there?"
                     </button>
-                    <button onclick="fillQuery('Who was seen by Dr. House?')" class="w-full text-left text-xs bg-slate-700 p-3 rounded-lg hover:bg-slate-600 transition-all border border-slate-600 hover:border-indigo-400">
-                        "Who was seen by Dr. House?"
+                    <button onclick="fillQuery('What symptoms are described for diabetic patients?')" class="w-full text-left text-xs bg-slate-700 p-3 rounded-lg hover:bg-slate-600 transition-all border border-slate-600 hover:border-indigo-400">
+                        <span class="text-purple-400 font-bold">RAG</span> "What symptoms are described for diabetic patients?"
                     </button>
-                    <button onclick="fillQuery('Count of active prescriptions')" class="w-full text-left text-xs bg-slate-700 p-3 rounded-lg hover:bg-slate-600 transition-all border border-slate-600 hover:border-indigo-400">
-                        "Count of active prescriptions"
+                    <button onclick="fillQuery('What medications are prescribed for patients whose notes mention chest pain?')" class="w-full text-left text-xs bg-slate-700 p-3 rounded-lg hover:bg-slate-600 transition-all border border-slate-600 hover:border-indigo-400">
+                        <span class="text-amber-400 font-bold">HYBRID</span> "Medications for patients with chest pain in notes?"
+                    </button>
+                    <button onclick="fillQuery('Summarize clinical notes mentioning hypertension treatment')" class="w-full text-left text-xs bg-slate-700 p-3 rounded-lg hover:bg-slate-600 transition-all border border-slate-600 hover:border-indigo-400">
+                        <span class="text-purple-400 font-bold">RAG</span> "Summarize notes on hypertension treatment"
                     </button>
                 </div>
             </div>
@@ -207,14 +222,14 @@
                 <div id="chat-history" class="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
                     <!-- Intro Message -->
                     <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-100 max-w-[80%]">
-                        <p class="text-slate-700">Hello! I am your AI medical assistant. I can query the database for you. Ask me anything about patients, prescriptions, or clinical notes.</p>
+                        <p class="text-slate-700">Hello! I am your AI medical assistant. I can query the database (<span class="text-blue-600 font-semibold">SQL</span>), search clinical notes (<span class="text-purple-600 font-semibold">RAG</span>), or combine both (<span class="text-amber-600 font-semibold">Hybrid</span>). Ask me anything about patients, prescriptions, or clinical notes.</p>
                     </div>
                 </div>
 
                 <!-- Loading Indicator -->
                 <div id="chat-loading" class="hidden absolute bottom-20 left-6 right-6 z-10">
                     <div class="flex items-center gap-2 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-full w-fit shadow-sm border border-indigo-100 animate-pulse">
-                        <i class="fa-solid fa-circle-notch fa-spin"></i> Generating secure SQL query...
+                        <i class="fa-solid fa-circle-notch fa-spin"></i> Routing query & generating response...
                     </div>
                 </div>
 

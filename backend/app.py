@@ -1,31 +1,33 @@
-# app.py
-# FastAPI backend: SQLite + CSV bootstrap + LangGraph text-to-SQL via Ollama
-# ✅ Fixes:
-# 1) Quote-loss issue: execute RAW LLM SQL as-is (no cleaning).
-# 2) "Top/Popular medicines by condition" issue: schema-aware prompt + auto-repair hint.
-# 3) Safety guardrails: SELECT-only, one statement, no placeholders, balanced quotes, no write ops.
-# 4) ✅ Dashboard pagination + KPIs computed on FULL filtered data instantly
-#    - return only top 50 rows for table
-#    - KPIs computed via aggregate queries on entire filtered dataset
-#    - response shape: { kpis, rows, pagination }
+"""
+Medical AI Backend — FastAPI server.
 
-import os
+Routes:
+  /api/query     → AI query (routed: SQL, RAG, or Hybrid)
+  /api/dashboard → Patient table with KPIs + pagination
+  /api/filters   → Distinct clinics, doctors, conditions for dropdowns
+"""
+
 import csv
+import logging
+import os
 import sqlite3
-import re
+import uuid
 from datetime import datetime
-from typing import Optional, TypedDict, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from langchain_ollama import ChatOllama
-from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_community.utilities import SQLDatabase
-from langgraph.graph import END, StateGraph
+from backend.config import (
+    DATA_DIR,
+    DB_PATH,
+    SERVER_HOST,
+    SERVER_PORT,
+)
 
+logger = logging.getLogger(__name__)
 
 # ---------------------------
 # APP SETUP
@@ -42,45 +44,21 @@ app.add_middleware(
 
 
 # ---------------------------
-# PATH CONFIGURATION
-# ---------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-DB_PATH = os.path.join(BASE_DIR, "medical_records.db")
-DB_URI = f"sqlite:///{DB_PATH}"
-
-POSSIBLE_DATA_DIRS = [
-    os.path.join(BASE_DIR, "data"),
-    os.path.join(os.getcwd(), "data"),
-    os.path.join(os.getcwd(), "backend", "data"),
-]
-
-DATA_DIR = None
-for path in POSSIBLE_DATA_DIRS:
-    if os.path.exists(path) and os.path.isdir(path):
-        DATA_DIR = path
-        break
-
-
-# ---------------------------
 # DATABASE INITIALIZATION
 # ---------------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS clinics (
             clinic_id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             location TEXT
         )
-        """
-    )
+    """)
 
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS patients (
             patient_id INTEGER PRIMARY KEY,
             full_name TEXT NOT NULL,
@@ -90,11 +68,9 @@ def init_db():
             clinic_id INTEGER,
             FOREIGN KEY(clinic_id) REFERENCES clinics(clinic_id)
         )
-        """
-    )
+    """)
 
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS clinical_notes (
             note_id INTEGER PRIMARY KEY,
             patient_id INTEGER,
@@ -105,11 +81,9 @@ def init_db():
             note_text TEXT,
             FOREIGN KEY(patient_id) REFERENCES patients(patient_id)
         )
-        """
-    )
+    """)
 
-    cursor.execute(
-        """
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS prescriptions (
             rx_id INTEGER PRIMARY KEY,
             patient_id INTEGER,
@@ -121,8 +95,7 @@ def init_db():
             status TEXT,
             FOREIGN KEY(patient_id) REFERENCES patients(patient_id)
         )
-        """
-    )
+    """)
 
     conn.commit()
 
@@ -130,24 +103,22 @@ def init_db():
     count = cursor.fetchone()[0]
 
     if count == 0 and DATA_DIR:
-        load_csv_to_table(conn, "clinics.csv", "clinics")
-        load_csv_to_table(conn, "patients.csv", "patients")
-        load_csv_to_table(conn, "clinical_notes.csv", "clinical_notes")
-        load_csv_to_table(conn, "prescriptions.csv", "prescriptions")
+        _load_csv_to_table(conn, "clinics.csv", "clinics")
+        _load_csv_to_table(conn, "patients.csv", "patients")
+        _load_csv_to_table(conn, "clinical_notes.csv", "clinical_notes")
+        _load_csv_to_table(conn, "prescriptions.csv", "prescriptions")
 
     conn.close()
 
 
-def load_csv_to_table(conn: sqlite3.Connection, filename: str, table_name: str):
+def _load_csv_to_table(conn: sqlite3.Connection, filename: str, table_name: str):
     if not DATA_DIR:
         return
-
     file_path = os.path.join(DATA_DIR, filename)
-    cursor = conn.cursor()
-
     if not os.path.exists(file_path):
         return
 
+    cursor = conn.cursor()
     with open(file_path, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
         headers = next(reader, None)
@@ -156,168 +127,258 @@ def load_csv_to_table(conn: sqlite3.Connection, filename: str, table_name: str):
         rows = list(reader)
         if not rows:
             return
-
         placeholders = ",".join(["?"] * len(headers))
         sql = f"INSERT INTO {table_name} VALUES ({placeholders})"
         cursor.executemany(sql, rows)
         conn.commit()
 
 
+# Initialize DB on import (CSV bootstrap if empty)
 init_db()
-db = SQLDatabase.from_uri(DB_URI, sample_rows_in_table_info=0)
 
 
 # ---------------------------
-# AI SETUP
+# RAG INITIALIZATION (lazy, on first query)
 # ---------------------------
-llm = None
-try:
-    llm = ChatOllama(model="llama3.2", temperature=0)
-except Exception:
-    llm = None
+_rag_initialized = False
 
 
-# ---------------------------
-# AGENT STATE
-# ---------------------------
-class AgentState(TypedDict):
-    question: str
-    schema: str
-    sql_query: str
-    query_result: Optional[str]
-    error: Optional[str]
-    iterations: int
-
-
-def get_schema(state: AgentState):
-    return {"schema": db.get_table_info(), "iterations": 0, "error": None, "sql_query": ""}
-
-
-def validate_sql(sql: str) -> tuple[bool, str]:
-    if sql is None:
-        return False, "SQL is None."
-
-    s = sql.strip()
-    if not s:
-        return False, "Empty SQL."
-
-    low = s.lstrip().lower()
-
-    if not (low.startswith("select") or low.startswith("with")):
-        return False, "Only SELECT/WITH queries are allowed."
-
-    if ";" in s.rstrip().rstrip(";"):
-        return False, "Multiple statements detected. Return only one query."
-
-    if "?" in s or re.search(r"[:$]\w+", s):
-        return False, "Placeholders detected (?, :param, $1). Inline literals only."
-
-    if s.count("'") % 2 != 0:
-        return False, "Unbalanced single quotes detected in SQL."
-
-    banned = ["insert", "update", "delete", "drop", "alter", "create", "pragma", "attach", "detach"]
-    for b in banned:
-        if re.search(rf"\b{b}\b", low):
-            return False, "Non-SELECT operation detected."
-
-    return True, ""
-
-
-def generate_sql(state: AgentState):
-    if llm is None:
-        return {
-            "sql_query": "",
-            "error": "Ollama LLM is not available. Start Ollama and ensure llama3.2 is installed.",
-            "iterations": state.get("iterations", 0) + 1,
-        }
-
-    schema = state["schema"]
-    question = state["question"]
-    prev_error = state.get("error")
-
-    system_prompt = (
-        "You are a senior SQLite expert.\n"
-        "Return EXACTLY ONE SQLite SELECT query that answers the question.\n\n"
-        "DATABASE FACTS (VERY IMPORTANT):\n"
-        "- clinical_notes has: patient_id, visit_date, doctor_name, diagnosis_code, condition_name, note_text\n"
-        "- prescriptions has: patient_id, medication_name, dosage, days_supply, refills_remaining, last_filled_date, status\n"
-        "- patients has: patient_id, clinic_id\n"
-        "- clinics has: clinic_id, name, location\n"
-        "- To filter by condition/diagnosis, you MUST use clinical_notes.\n"
-        "- To return medications, you MUST use prescriptions.\n"
-        "- Link condition -> meds via patient_id (JOIN clinical_notes.patient_id = prescriptions.patient_id).\n\n"
-        "HARD RULES:\n"
-        "1) Output ONLY the SQL query. No explanations. No markdown.\n"
-        "2) NEVER use parameter placeholders (?, :param, $1). Inline literals instead.\n"
-        "3) Do not invent columns. Use only columns from schema.\n"
-        "4) If question asks 'top', 'most popular', 'most prescribed':\n"
-        "   - use COUNT(*) as cnt\n"
-        "   - GROUP BY medication_name\n"
-        "   - ORDER BY cnt DESC\n"
-        "   - LIMIT N\n"
-        "5) prescriptions.status values are exactly 'Active' or 'Expired' (case-sensitive).\n"
-        "6) Use LIKE with wildcards for text filters (e.g., condition_name LIKE '%Hypertension%').\n"
-        "7) One statement only.\n"
-    )
-
-    user_prompt = f"Schema:\n{schema}\n\nQuestion:\n{question}\n"
-    if prev_error:
-        user_prompt += f"\nPrevious SQL error:\n{prev_error}\nReturn corrected SQL only."
-
-    res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
-    raw = res.content or ""
-
-    ok, err = validate_sql(raw)
-    if not ok:
-        return {
-            "sql_query": "",
-            "error": err,
-            "iterations": state.get("iterations", 0) + 1,
-        }
-
-    return {"sql_query": raw, "error": None, "iterations": state.get("iterations", 0) + 1}
-
-
-def execute_sql(state: AgentState):
-    sql = state.get("sql_query")
-    if not sql:
-        return {"error": "Empty SQL query. Nothing to execute.", "query_result": None}
-
-    ok, err = validate_sql(sql)
-    if not ok:
-        return {"error": f"SQL blocked: {err}", "query_result": None}
+def _ensure_rag_ready():
+    """Initialize vector store and BM25 index once."""
+    global _rag_initialized
+    if _rag_initialized:
+        return
 
     try:
-        res = db.run(sql)
-        return {"query_result": str(res), "error": None}
+        from backend.rag.vectorstore import populate_vectorstore
+        from backend.rag.bm25 import get_bm25_index
+
+        logger.info("Initializing RAG pipeline (vectorstore + BM25)...")
+        populate_vectorstore()
+        get_bm25_index()
+        _rag_initialized = True
+        logger.info("RAG pipeline ready.")
     except Exception as e:
-        msg = str(e)
-        if "no such column: condition_name" in msg or "no such column: diagnosis_code" in msg:
-            hint = (
-                "You referenced a column that does not exist in that table. "
-                "condition_name and diagnosis_code exist in clinical_notes, NOT prescriptions. "
-                "To filter by condition and return medications, JOIN clinical_notes and prescriptions "
-                "ON patient_id, then GROUP BY prescriptions.medication_name and ORDER BY COUNT(*) DESC."
+        logger.error(f"RAG initialization failed: {e}")
+        _rag_initialized = True  # don't retry on every request
+
+
+# ---------------------------
+# QUERY PROCESSING
+# ---------------------------
+def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Route and execute a user question through the appropriate agent.
+    Applies guardrails (grounding, confidence, attribution) to RAG/hybrid answers.
+
+    Returns the unified response dict.
+    """
+    from backend.agents.router import classify_query
+    from backend.agents.sql_agent import generate_and_execute
+    from backend.agents.rag_agent import retrieve_and_generate
+    from backend.agents.hybrid_agent import run_hybrid
+    from backend.guardrails.grounding import check_grounding
+    from backend.guardrails.confidence import compute_confidence, should_refuse, REFUSAL
+    from backend.guardrails.attribution import format_sources
+    from backend.memory.conversation import get_conversation_memory
+    from backend.memory.query_cache import get_query_cache
+
+    run_id = str(uuid.uuid4())
+
+    # Ensure RAG index is built for rag/hybrid queries
+    _ensure_rag_ready()
+
+    # Load conversation context (short-term memory)
+    conversation_context = ""
+    if session_id:
+        memory = get_conversation_memory()
+        conversation_context = memory.get_context(session_id)
+
+    # Load few-shot examples (long-term memory)
+    cache = get_query_cache()
+    few_shot_examples = cache.get_similar_patterns()
+
+    # Route the query
+    query_type = classify_query(question)
+    logger.info(f"[{run_id}] Query type: {query_type} — '{question[:80]}'")
+
+    # Execute based on route
+    if query_type == "sql":
+        result = generate_and_execute(
+            question=question,
+            conversation_context=conversation_context,
+            few_shot_examples=few_shot_examples,
+        )
+        answer = result.get("query_result") or ""
+        if not answer or answer == "[]":
+            answer = "No matching records found. Try simplifying your query."
+
+        conf = compute_confidence(query_type="sql", llm_self_confidence=1.0 if not result.get("error") else 0.0)
+
+        # Save to memory
+        if session_id:
+            get_conversation_memory().add_turn(
+                session_id, question, answer, query_type="sql",
+                sql_query=result.get("sql_query"),
             )
-            return {"error": hint, "query_result": None}
-        return {"error": msg, "query_result": None}
+        # Cache successful SQL pattern
+        if not result.get("error") and result.get("sql_query"):
+            cache.store_pattern(question, result["sql_query"], query_type="sql")
 
+        return {
+            "query_type": "sql",
+            "answer": answer,
+            "result": answer,  # backward compat
+            "sql_generated": result.get("sql_query", ""),
+            "confidence": conf["score"],
+            "sources": [],
+            "grounding": None,
+            "clarification": None,
+            "error": result.get("error"),
+            "metadata": {
+                "run_id": run_id,
+                "iterations": result.get("iterations", 0),
+                "generation_time_ms": result.get("generation_time_ms", 0),
+                "confidence_detail": conf,
+            },
+        }
 
-def should_continue(state: AgentState):
-    return "retry" if state.get("error") and state.get("iterations", 0) < 3 else "end"
+    elif query_type == "rag":
+        result = retrieve_and_generate(
+            question=question,
+            conversation_context=conversation_context,
+        )
+        answer = result.get("answer", "")
+        sources = result.get("sources", [])
+        retrieved_docs = result.get("retrieved_docs", [])
 
+        # Grounding check
+        grounding = check_grounding(answer, sources)
 
-workflow = StateGraph(AgentState)
-workflow.add_node("get_schema", get_schema)
-workflow.add_node("generate_sql", generate_sql)
-workflow.add_node("execute_sql", execute_sql)
+        # Confidence scoring
+        conf = compute_confidence(
+            query_type="rag",
+            retrieved_docs=retrieved_docs,
+            grounding_result=grounding,
+            llm_self_confidence=result.get("llm_self_confidence", 0.5),
+        )
 
-workflow.set_entry_point("get_schema")
-workflow.add_edge("get_schema", "generate_sql")
-workflow.add_edge("generate_sql", "execute_sql")
-workflow.add_conditional_edges("execute_sql", should_continue, {"retry": "generate_sql", "end": END})
+        # Refusal policy
+        if should_refuse("rag", conf["score"], grounding):
+            answer = REFUSAL
+            if sources:
+                snippets = "\n".join(f"- {s.get('text_snippet', '')[:100]}" for s in sources[:3])
+                answer += f"\n\nClosest matches found:\n{snippets}"
 
-agent_app = workflow.compile()
+        # Add disclaimer if medium confidence
+        elif conf.get("disclaimer"):
+            answer += f"\n\n_{conf['disclaimer']}_"
+
+        formatted_sources = format_sources(sources)
+
+        # Save to memory
+        if session_id:
+            source_ids = [s.get("doc_id", "") for s in sources if s.get("cited")]
+            get_conversation_memory().add_turn(
+                session_id, question, answer, query_type="rag",
+                source_doc_ids=source_ids,
+            )
+
+        return {
+            "query_type": "rag",
+            "answer": answer,
+            "result": answer,  # backward compat
+            "sql_generated": None,
+            "confidence": conf["score"],
+            "sources": formatted_sources,
+            "grounding": {
+                "is_grounded": grounding.get("is_grounded"),
+                "score": grounding.get("grounding_score"),
+                "supported_sentences": grounding.get("supported_sentences"),
+                "total_sentences": grounding.get("total_sentences"),
+                "unsupported_claims": grounding.get("unsupported_claims", []),
+            },
+            "clarification": None,
+            "error": None,
+            "metadata": {
+                "run_id": run_id,
+                "retrieval_time_ms": result.get("retrieval_time_ms", 0),
+                "generation_time_ms": result.get("generation_time_ms", 0),
+                "grounding_time_ms": grounding.get("grounding_time_ms", 0),
+                "confidence_detail": conf,
+            },
+        }
+
+    else:  # hybrid
+        result = run_hybrid(
+            question=question,
+            conversation_context=conversation_context,
+            few_shot_examples=few_shot_examples,
+        )
+        answer = result.get("answer", "")
+        sources = result.get("sources", [])
+        retrieved_docs = result.get("retrieved_docs", [])
+
+        # Grounding check (on the RAG portion)
+        rag_answer = result.get("rag_answer", "")
+        grounding = check_grounding(rag_answer, sources) if rag_answer else None
+
+        # Confidence scoring
+        conf = compute_confidence(
+            query_type="hybrid",
+            retrieved_docs=retrieved_docs,
+            grounding_result=grounding,
+            llm_self_confidence=result.get("confidence", 0.5),
+        )
+
+        if conf.get("disclaimer"):
+            answer += f"\n\n_{conf['disclaimer']}_"
+
+        formatted_sources = format_sources(sources)
+
+        # Save to memory
+        if session_id:
+            source_ids = [s.get("doc_id", "") for s in sources if s.get("cited")]
+            get_conversation_memory().add_turn(
+                session_id, question, answer, query_type="hybrid",
+                sql_query=result.get("sql_generated"),
+                source_doc_ids=source_ids,
+            )
+        # Cache successful SQL pattern from hybrid
+        sql_query = result.get("sql_generated")
+        if sql_query and not result.get("error"):
+            cache.store_pattern(question, sql_query, query_type="hybrid")
+
+        grounding_response = None
+        if grounding:
+            grounding_response = {
+                "is_grounded": grounding.get("is_grounded"),
+                "score": grounding.get("grounding_score"),
+                "supported_sentences": grounding.get("supported_sentences"),
+                "total_sentences": grounding.get("total_sentences"),
+                "unsupported_claims": grounding.get("unsupported_claims", []),
+            }
+
+        return {
+            "query_type": "hybrid",
+            "answer": answer,
+            "result": answer,  # backward compat
+            "sql_generated": result.get("sql_generated", ""),
+            "confidence": conf["score"],
+            "sources": formatted_sources,
+            "grounding": grounding_response,
+            "clarification": None,
+            "hybrid_mode": result.get("hybrid_mode"),
+            "error": result.get("error"),
+            "metadata": {
+                "run_id": run_id,
+                "retrieval_time_ms": result.get("retrieval_time_ms", 0),
+                "generation_time_ms": result.get("generation_time_ms", 0),
+                "total_time_ms": result.get("total_time_ms", 0),
+                "grounding_time_ms": grounding.get("grounding_time_ms", 0) if grounding else 0,
+                "confidence_detail": conf,
+            },
+        }
 
 
 # ---------------------------
@@ -327,6 +388,11 @@ class FilterRequest(BaseModel):
     clinic: Optional[str] = None
     doctor: Optional[str] = None
     condition: Optional[str] = None
+
+
+class QueryRequest(BaseModel):
+    question: str
+    session_id: Optional[str] = None
 
 
 def _norm(v: Optional[str]) -> Optional[str]:
@@ -371,7 +437,6 @@ def filters():
     return data
 
 
-# ✅ GET dashboard with pagination (frontend can keep POST; GET is useful too)
 @app.get("/api/dashboard")
 def dashboard_get(
     clinic: Optional[str] = Query(None),
@@ -384,7 +449,6 @@ def dashboard_get(
     return _dashboard_impl(f, page=page, page_size=page_size)
 
 
-# ✅ POST dashboard with pagination (fits your current frontend pattern)
 @app.post("/api/dashboard")
 def dashboard_post(
     f: FilterRequest,
@@ -408,7 +472,6 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # Shared FROM/JOIN
     base_from = """
         FROM patients p
         JOIN clinics c ON p.clinic_id = c.clinic_id
@@ -418,16 +481,13 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
 
     where_sql, params = _build_where_and_params(f)
 
-    # --- KPI queries (FULL dataset, no LIMIT) ---
-    # Total rows for pagination
+    # KPI queries (FULL dataset)
     total_sql = f"SELECT COUNT(*) as cnt {base_from} {where_sql}"
     total_rows = int(cur.execute(total_sql, params).fetchone()["cnt"])
 
-    # Unique patients in filtered set
     uniq_pat_sql = f"SELECT COUNT(DISTINCT p.patient_id) as cnt {base_from} {where_sql}"
     unique_patients = int(cur.execute(uniq_pat_sql, params).fetchone()["cnt"])
 
-    # Rx status breakdown (Active/Expired) on FULL dataset
     rx_status_sql = f"""
         SELECT r.status as status, COUNT(*) as cnt
         {base_from}
@@ -439,7 +499,7 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
     active_rx = rx_status_map.get("Active", 0)
     expired_rx = rx_status_map.get("Expired", 0)
 
-    # --- Paged table query (only page_size rows) ---
+    # Paged table query
     offset = (page - 1) * page_size
 
     page_sql = f"""
@@ -456,7 +516,6 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
     rows = cur.execute(page_sql, page_params).fetchall()
     conn.close()
 
-    # Convert to UI-friendly rows (status/action computed per row)
     now = datetime.now()
     out_rows: List[Dict[str, Any]] = []
     for r in rows:
@@ -478,31 +537,24 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
             note_text = (r["note_text"] or "")
             note_snippet = note_text[:220] + ("..." if len(note_text) > 220 else "")
 
-            out_rows.append(
-                {
-                    # table + card
-                    "patient_id": r["patient_id"],
-                    "name": r["full_name"],
-                    "clinic": r["clinic_name"],
-                    "doctor": r["doctor_name"],
-                    "condition": r["condition_name"],
-                    "medication": r["medication_name"],
-                    "dosage": r["dosage"],
-                    "note_snippet": note_snippet,
-                    "last_visit": r["visit_date"],
-
-                    # IMPORTANT: frontend expects these keys
-                    "status": status,
-                    "action": action,
-                    "refills_left": r["refills_remaining"],
-
-                    # optional debug
-                    "rx_status": r["rx_status"],
-                    "last_filled_date": r["last_filled_date"],
-                    "days_supply": r["days_supply"],
-                    "action_type": action_type,
-                }
-            )
+            out_rows.append({
+                "patient_id": r["patient_id"],
+                "name": r["full_name"],
+                "clinic": r["clinic_name"],
+                "doctor": r["doctor_name"],
+                "condition": r["condition_name"],
+                "medication": r["medication_name"],
+                "dosage": r["dosage"],
+                "note_snippet": note_snippet,
+                "last_visit": r["visit_date"],
+                "status": status,
+                "action": action,
+                "refills_left": r["refills_remaining"],
+                "rx_status": r["rx_status"],
+                "last_filled_date": r["last_filled_date"],
+                "days_supply": r["days_supply"],
+                "action_type": action_type,
+            })
         except Exception:
             continue
 
@@ -531,22 +583,40 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
 
 
 @app.post("/api/query")
-def query_ai(req: dict):
-    question = (req.get("question") or "")
-    if question == "":
+def query_ai(req: QueryRequest):
+    question = (req.question or "").strip()
+    if not question:
         raise HTTPException(400, "Question required")
 
     try:
-        res = agent_app.invoke({"question": question})
-        if res.get("error"):
-            raise Exception(res["error"])
+        response = _process_query(
+            question=question,
+            session_id=req.session_id,
+        )
 
-        result_str = res.get("query_result") or ""
-        if result_str == "" or result_str == "[]":
-            result_str = "No matching records found. Try simplifying your query."
+        if response.get("error") and not response.get("answer"):
+            raise Exception(response["error"])
 
-        return {"sql_generated": res.get("sql_query"), "result": result_str}
+        # Log run for observability
+        try:
+            from backend.observability.logger import log_run
+            run_id = response.get("metadata", {}).get("run_id", "")
+            log_run(
+                run_id=run_id,
+                session_id=req.session_id,
+                question=question,
+                query_type=response.get("query_type", "unknown"),
+                result=response,
+            )
+        except Exception as log_err:
+            logger.warning(f"Failed to log run: {log_err}")
+
+        return response
+
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception(f"Query failed: {e}")
         raise HTTPException(500, detail=str(e))
 
 
@@ -554,7 +624,6 @@ def query_ai(req: dict):
 # MAIN
 # ---------------------------
 if __name__ == "__main__":
-    # Keep fixed port (frontend uses localhost:8000)
-    port = 8000
-    print(f"\n🚀 Server running at: http://localhost:{port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    logging.basicConfig(level=logging.INFO)
+    print(f"\nServer running at: http://localhost:{SERVER_PORT}")
+    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)

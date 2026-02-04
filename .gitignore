@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Database (regenerated from CSVs on startup)
+*.db
+
+# Vector store (rebuilt on startup)
+chroma_db/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Evaluation artifacts (generated, not committed)
+evaluation/eval_report.json
+evaluation/baseline_metrics.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

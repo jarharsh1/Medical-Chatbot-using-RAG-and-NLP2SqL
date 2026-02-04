@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION ---
 NUM_PATIENTS = 35000  # Will generate ~105,000 total rows
-DATA_DIR = "data"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 OS_SEED = 42
 
 fake = Faker()
@@ -248,10 +249,16 @@ def generate_bulk_data():
         meds_list = cond.get("meds", ["Vitamin D 1000IU"])
         if not meds_list: meds_list = ["Vitamin D 1000IU"]
         med_str = random.choice(meds_list)
-        
-        parts = med_str.split(" ")
-        med_name = parts[0]
-        dosage = " ".join(parts[1:]) if len(parts) > 1 else "Standard"
+
+        # Split medication name from dosage using regex
+        # Pattern: name is everything before first numeric value (e.g., "Lisinopril 10mg" → name="Lisinopril", dosage="10mg")
+        med_match = re.match(r'^(.+?)\s+(\d+.*)', med_str)
+        if med_match:
+            med_name = med_match.group(1).strip()
+            dosage = med_match.group(2).strip()
+        else:
+            med_name = med_str.strip()
+            dosage = "Standard"
         
         days_supply = random.choice([30, 60, 90])
         status_roll = random.random()
