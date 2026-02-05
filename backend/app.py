@@ -18,11 +18,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.config import (
     DATA_DIR,
     DB_PATH,
+    PROJECT_ROOT,
     SERVER_HOST,
     SERVER_PORT,
 )
@@ -417,8 +420,8 @@ def _build_where_and_params(f: FilterRequest) -> Tuple[str, List[Any]]:
     return where, params
 
 
-@app.get("/")
-def read_root():
+@app.get("/api/health")
+def health_check():
     return {"status": "ok", "message": "Medical AI Backend Running"}
 
 
@@ -618,6 +621,20 @@ def query_ai(req: QueryRequest):
     except Exception as e:
         logger.exception(f"Query failed: {e}")
         raise HTTPException(500, detail=str(e))
+
+
+# ---------------------------
+# FRONTEND (serve static files from /frontend)
+# ---------------------------
+FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
+
+
+@app.get("/", include_in_schema=False)
+def serve_frontend():
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
+
+app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 
 # ---------------------------

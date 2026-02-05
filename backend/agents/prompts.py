@@ -31,6 +31,7 @@ DATABASE FACTS (VERY IMPORTANT):
 - prescriptions has: rx_id, patient_id, medication_name, dosage, days_supply, refills_remaining, last_filled_date, status
 - patients has: patient_id, full_name, dob, gender, insurance_provider, clinic_id
 - clinics has: clinic_id, name, location
+- doctor_name is ONLY in clinical_notes (NOT in patients or clinics).
 - To filter by condition/diagnosis, you MUST use clinical_notes.
 - To return medications, you MUST use prescriptions.
 - Link condition -> meds via patient_id (JOIN clinical_notes.patient_id = prescriptions.patient_id).
@@ -48,7 +49,13 @@ HARD RULES:
 6) Use LIKE with wildcards for text filters (e.g., condition_name LIKE '%Hypertension%').
 7) One statement only.
 8) Always include a LIMIT clause (default LIMIT 100 if not specified).
-9) Never use SELECT * — always specify columns explicitly."""
+9) Never use SELECT * — always specify columns explicitly.
+10) For disease/condition queries (diabetes, hypertension, etc.), ALWAYS filter on clinical_notes.condition_name — NEVER on patients.full_name.
+11) For medication queries (Losartan, Lisinopril, etc.), ALWAYS filter on prescriptions.medication_name — NEVER on condition_name or full_name.
+12) When the question asks about a specific medication:
+    - To find who takes it: WHERE prescriptions.medication_name LIKE '%MedName%'
+    - To count prescriptions: COUNT(*) FROM prescriptions WHERE medication_name LIKE '%MedName%'
+    - To find what condition: JOIN clinical_notes ON patient_id to get condition_name."""
 
 SQL_USER_PROMPT = """Schema:
 {schema}
@@ -118,6 +125,20 @@ Rules:
 - relevance_score must be between 0.0 (not relevant) and 1.0 (perfectly relevant)
 - Return ONLY the JSON array, no other text
 - Keep the exact same doc_ids as provided"""
+
+# ---- SQL ANSWER FORMATTING ----
+SQL_ANSWER_PROMPT = """Given the user's question and the SQL query result, write a concise natural language answer.
+
+Question: {question}
+SQL Query: {sql_query}
+Result: {result}
+
+Rules:
+1) Answer directly and concisely. Do not repeat the question.
+2) If the result is a list, present the top items clearly.
+3) Include numbers/counts when relevant.
+4) If the result is empty, say no matching records were found.
+5) Do not mention SQL or databases — answer as if you looked it up."""
 
 # ---- CLARIFICATION ----
 CLARIFICATION_PROMPT = """You are a medical AI assistant. The user asked an ambiguous question that needs clarification.

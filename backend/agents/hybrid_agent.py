@@ -71,9 +71,27 @@ def run_hybrid(
     modified_question = question
     if mode == "filter" and patient_ids:
         ids_str = ", ".join(str(pid) for pid in patient_ids)
+        # Summarize what RAG found so the SQL agent has context
+        conditions = set()
+        medications = set()
+        for d in retrieved_docs[:10]:
+            meta = d.get("metadata", {})
+            if meta.get("condition"):
+                conditions.add(meta["condition"])
+            content = d.get("content", "")
+            # Extract medication names from note text
+            if "medication_name" in meta:
+                medications.add(meta["medication_name"])
+        context_hint = ""
+        if conditions:
+            context_hint += f"Conditions found: {', '.join(conditions)}. "
+        if medications:
+            context_hint += f"Medications found: {', '.join(medications)}. "
         modified_question = (
-            f"{question}\n\nIMPORTANT: Only consider patients with patient_id IN ({ids_str}). "
-            f"These were identified from clinical notes matching the query."
+            f"{question}\n\n"
+            f"IMPORTANT: Only consider patients with patient_id IN ({ids_str}). "
+            f"These were identified from clinical notes matching the query. {context_hint}"
+            f"Use prescriptions.medication_name to filter/count medications, NOT condition_name."
         )
     elif mode == "assist" and retrieved_docs:
         rag_context = "\n".join(

@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:8000/api";
+const API_URL = "/api";
 
 // State
 let currentFilters = { clinic: '', doctor: '', condition: '' };
@@ -336,18 +336,59 @@ function getQueryTypeBadge(queryType) {
 }
 
 // --- CONFIDENCE METER ---
-function getConfidenceMeter(confidence) {
+function getConfidenceMeter(confidence, metadata) {
     const pct = Math.round((confidence || 0) * 100);
-    let color, label;
-    if (pct >= 70) { color = 'bg-green-500'; label = 'text-green-700'; }
-    else if (pct >= 40) { color = 'bg-yellow-500'; label = 'text-yellow-700'; }
-    else { color = 'bg-red-500'; label = 'text-red-700'; }
+    let color, label, levelText, levelIcon;
+    if (pct >= 70) {
+        color = 'bg-green-500'; label = 'text-green-700';
+        levelText = 'High — answer is well-supported by records';
+        levelIcon = 'fa-circle-check';
+    } else if (pct >= 40) {
+        color = 'bg-yellow-500'; label = 'text-yellow-700';
+        levelText = 'Moderate — some claims may not be in the records';
+        levelIcon = 'fa-circle-info';
+    } else {
+        color = 'bg-red-500'; label = 'text-red-700';
+        levelText = 'Low — answer may include general knowledge beyond records';
+        levelIcon = 'fa-triangle-exclamation';
+    }
 
-    return `<div class="flex items-center gap-2 mt-1">
-        <div class="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-            <div class="${color} h-full rounded-full transition-all" style="width: ${pct}%"></div>
+    // Build signal breakdown if available
+    let signalHtml = '';
+    const detail = metadata?.confidence_detail;
+    if (detail?.signals) {
+        const s = detail.signals;
+        const rows = [];
+        if (s.retrieval_margin !== null && s.retrieval_margin !== undefined) {
+            rows.push(`<div class="flex justify-between"><span>Retrieval Margin</span><span class="font-semibold">${Math.round(s.retrieval_margin * 100)}%</span></div>`);
+        }
+        if (s.coverage !== null && s.coverage !== undefined) {
+            rows.push(`<div class="flex justify-between"><span>Source Coverage</span><span class="font-semibold">${Math.round(s.coverage * 100)}%</span></div>`);
+        }
+        if (s.llm_self_assessment !== null && s.llm_self_assessment !== undefined) {
+            rows.push(`<div class="flex justify-between"><span>Model Self-Assessment</span><span class="font-semibold">${Math.round(s.llm_self_assessment * 100)}%</span></div>`);
+        }
+        if (rows.length > 0) {
+            signalHtml = `
+            <div class="mt-1.5 text-[10px] text-slate-400 space-y-0.5 border-t border-slate-100 pt-1.5">
+                <div class="font-semibold text-slate-500 mb-0.5">Score Breakdown</div>
+                ${rows.join('')}
+            </div>`;
+        }
+    }
+
+    return `<div class="mt-1">
+        <div class="flex items-center gap-2">
+            <div class="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div class="${color} h-full rounded-full transition-all" style="width: ${pct}%"></div>
+            </div>
+            <span class="text-[11px] font-bold ${label}">${pct}%</span>
         </div>
-        <span class="text-[10px] font-semibold ${label}">${pct}%</span>
+        <div class="flex items-center gap-1 mt-0.5">
+            <i class="fa-solid ${levelIcon} text-[9px] ${label}"></i>
+            <span class="text-[10px] ${label}">${levelText}</span>
+        </div>
+        ${signalHtml}
     </div>`;
 }
 
@@ -356,15 +397,29 @@ function getGroundingIndicator(grounding) {
     if (!grounding) return '';
     const grounded = grounding.is_grounded;
     const score = Math.round((grounding.score || 0) * 100);
+    const supported = grounding.supported_sentences || 0;
+    const total = grounding.total_sentences || 0;
+
+    let icon, color, mainLabel, tooltip;
     if (grounded) {
-        return `<span class="inline-flex items-center gap-1 text-[10px] text-green-600">
-            <i class="fa-solid fa-circle-check"></i> Grounded (${score}%)
-        </span>`;
+        icon = 'fa-shield-check'; color = 'text-green-600 bg-green-50 border-green-200';
+        mainLabel = 'Verified';
+        tooltip = `All ${total} claims verified against clinical records`;
+    } else if (score >= 50) {
+        icon = 'fa-shield-halved'; color = 'text-amber-600 bg-amber-50 border-amber-200';
+        mainLabel = 'Partially Verified';
+        tooltip = `${supported} of ${total} claims found in clinical records. Some details come from general medical knowledge.`;
     } else {
-        return `<span class="inline-flex items-center gap-1 text-[10px] text-amber-600">
-            <i class="fa-solid fa-triangle-exclamation"></i> Partially grounded (${score}%)
-        </span>`;
+        icon = 'fa-book-medical'; color = 'text-blue-600 bg-blue-50 border-blue-200';
+        mainLabel = 'General Knowledge';
+        tooltip = `${supported} of ${total} claims from records. Answer supplemented with medical knowledge not in your records.`;
     }
+
+    return `<div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium ${color} border cursor-help" title="${tooltip}">
+        <i class="fa-solid ${icon}"></i>
+        <span>${mainLabel}</span>
+        <span class="opacity-60">${supported}/${total}</span>
+    </div>`;
 }
 
 // --- SOURCE CITATIONS ---
@@ -407,6 +462,20 @@ function renderSources(sources) {
     </div>`;
 }
 
+// --- RESPONSE TIMING ---
+function getTimingInfo(metadata) {
+    if (!metadata) return '';
+    const parts = [];
+    if (metadata.retrieval_time_ms) parts.push(`Retrieval: ${(metadata.retrieval_time_ms / 1000).toFixed(1)}s`);
+    if (metadata.generation_time_ms) parts.push(`Generation: ${(metadata.generation_time_ms / 1000).toFixed(1)}s`);
+    if (metadata.grounding_time_ms) parts.push(`Grounding: ${(metadata.grounding_time_ms / 1000).toFixed(1)}s`);
+    if (metadata.total_time_ms) parts.push(`Total: ${(metadata.total_time_ms / 1000).toFixed(1)}s`);
+    if (parts.length === 0) return '';
+    return `<div class="text-[9px] text-slate-300 mt-2 flex items-center gap-3 border-t border-slate-100 pt-2">
+        <i class="fa-solid fa-clock"></i> ${parts.join(' &middot; ')}
+    </div>`;
+}
+
 // --- AI MESSAGE WITH FULL RESPONSE ---
 function addAIMessage(data) {
     const history = document.getElementById('chat-history');
@@ -414,25 +483,32 @@ function addAIMessage(data) {
     div.className = "p-4 rounded-xl text-sm mb-4 max-w-[85%] message-bubble shadow-sm bg-white border border-slate-200 text-slate-700 mr-auto rounded-bl-none";
 
     const queryBadge = getQueryTypeBadge(data.query_type);
-    const confidenceMeter = getConfidenceMeter(data.confidence);
+    const confidenceMeter = getConfidenceMeter(data.confidence, data.metadata);
     const groundingHtml = getGroundingIndicator(data.grounding);
     const sourcesHtml = renderSources(data.sources);
+    const timingHtml = getTimingInfo(data.metadata);
 
     const answer = data.answer || data.result || '';
     const sql = data.sql_generated;
 
+    // Hybrid mode badge
+    const hybridMode = data.hybrid_mode
+        ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium uppercase">${data.hybrid_mode}</span>`
+        : '';
+
     div.innerHTML = `
-        <div class="flex items-center gap-2 mb-2">
+        <div class="flex items-center flex-wrap gap-2 mb-2">
             <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
                 <i class="fa-solid fa-robot"></i> AI Analysis
             </div>
             ${queryBadge}
+            ${hybridMode}
             <div class="ml-auto flex items-center gap-2">
                 ${groundingHtml}
             </div>
         </div>
-        <div class="flex items-center gap-3 mb-2">
-            <span class="text-[10px] text-slate-400 font-medium">Confidence</span>
+        <div class="mb-3">
+            <div class="text-[10px] text-slate-400 font-medium mb-0.5">Answer Confidence</div>
             ${confidenceMeter}
         </div>
         ${sql ? `
@@ -442,6 +518,7 @@ function addAIMessage(data) {
         </div>` : ''}
         <div class="whitespace-pre-wrap leading-relaxed">${escapeHtml(answer)}</div>
         ${sourcesHtml}
+        ${timingHtml}
     `;
 
     history.appendChild(div);

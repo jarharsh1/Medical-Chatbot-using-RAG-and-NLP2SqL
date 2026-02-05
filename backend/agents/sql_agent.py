@@ -17,7 +17,7 @@ from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
-from backend.agents.prompts import SQL_SYSTEM_PROMPT, SQL_USER_PROMPT
+from backend.agents.prompts import SQL_SYSTEM_PROMPT, SQL_USER_PROMPT, SQL_ANSWER_PROMPT
 from backend.config import DB_URI, LLM_MODEL, MAX_SQL_RETRIES, SQL_BANNED_OPS
 
 logger = logging.getLogger(__name__)
@@ -75,13 +75,16 @@ def validate_sql(sql: str) -> Tuple[bool, str]:
     return True, s
 
 
+_MAIN_TABLES = ["clinics", "patients", "clinical_notes", "prescriptions"]
+
+
 def get_relevant_schema(question: str) -> str:
     """
-    Schema retriever: return full schema for now (4 tables is small enough).
-    For larger DBs, this would use embedding similarity to filter tables.
+    Schema retriever: only includes the 4 domain tables.
+    Excludes internal tables (indexed_notes, query_patterns, runs, etc.).
     """
     db = _get_db()
-    return db.get_table_info()
+    return db.get_table_info(table_names=_MAIN_TABLES)
 
 
 def generate_and_execute(
@@ -150,11 +153,16 @@ def generate_and_execute(
                 break
             except Exception as e:
                 msg = str(e)
-                if "no such column: condition_name" in msg or "no such column: diagnosis_code" in msg:
+                if "no such column" in msg:
                     error = (
-                        "You referenced a column that does not exist in that table. "
-                        "condition_name and diagnosis_code exist in clinical_notes, NOT prescriptions. "
-                        "JOIN clinical_notes and prescriptions ON patient_id."
+                        f"SQL error: {msg}\n"
+                        "REMINDER — columns per table:\n"
+                        "  clinical_notes: note_id, patient_id, visit_date, doctor_name, diagnosis_code, condition_name, note_text\n"
+                        "  patients: patient_id, full_name, dob, gender, insurance_provider, clinic_id\n"
+                        "  prescriptions: rx_id, patient_id, medication_name, dosage, days_supply, refills_remaining, last_filled_date, status\n"
+                        "  clinics: clinic_id, name, location\n"
+                        "doctor_name is in clinical_notes, NOT patients. "
+                        "condition_name and diagnosis_code are in clinical_notes, NOT prescriptions."
                     )
                 else:
                     error = msg
@@ -162,14 +170,30 @@ def generate_and_execute(
         except Exception as e:
             error = f"LLM invocation failed: {e}"
 
-    elapsed = int((time.time() - start) * 1000)
-
     if query_result and (query_result == "" or query_result == "[]"):
         query_result = "No matching records found. Try simplifying your query."
 
+    # Generate natural language answer from raw result
+    nl_answer = query_result
+    if query_result and not error and query_result != "No matching records found. Try simplifying your query.":
+        try:
+            prompt = SQL_ANSWER_PROMPT.format(
+                question=question,
+                sql_query=sql_query,
+                result=query_result[:2000],  # truncate large results
+            )
+            res = llm.invoke([HumanMessage(content=prompt)])
+            nl_answer = (res.content or "").strip() or query_result
+        except Exception as e:
+            logger.warning(f"SQL answer formatting failed: {e}")
+            nl_answer = query_result
+
+    elapsed = int((time.time() - start) * 1000)
+
     return {
         "sql_query": sql_query,
-        "query_result": query_result,
+        "query_result": nl_answer,
+        "raw_result": query_result,
         "error": error,
         "iterations": iterations,
         "generation_time_ms": elapsed,
