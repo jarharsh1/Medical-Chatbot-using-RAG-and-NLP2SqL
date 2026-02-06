@@ -189,8 +189,33 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
     from backend.memory.conversation import get_conversation_memory
     from backend.memory.query_cache import get_query_cache
     from backend.memory.query_result_cache import get_cache
+    from backend.security.input_guard import check_input, ThreatLevel
 
     run_id = str(uuid.uuid4())
+
+    # Security check - validate input before processing
+    security_result = check_input(question, client_id=session_id)
+    if security_result.should_block:
+        logger.warning(f"[{run_id}] Blocked query: {security_result.threats_detected}")
+        return {
+            "query_type": "blocked",
+            "answer": security_result.warning_message or "Your query was blocked for security reasons.",
+            "result": security_result.warning_message,
+            "sql_generated": None,
+            "confidence": 0.0,
+            "sources": [],
+            "grounding": None,
+            "clarification": None,
+            "error": "security_blocked",
+            "metadata": {
+                "run_id": run_id,
+                "security": security_result.to_dict(),
+            },
+        }
+
+    # Log security warnings (but allow query to proceed)
+    if security_result.threat_level == ThreatLevel.MEDIUM:
+        logger.info(f"[{run_id}] Security warning: {security_result.threats_detected}")
 
     # Check result cache first (for identical queries)
     result_cache = get_cache()
@@ -498,6 +523,22 @@ def refresh_materialized_views():
         return {"status": "ok", "message": "Materialized views refreshed"}
     except Exception as e:
         raise HTTPException(500, f"Failed to refresh views: {e}")
+
+
+class SecurityTestRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/security/check")
+def security_check(req: SecurityTestRequest):
+    """
+    Test the security input guard without processing the query.
+
+    Useful for testing and debugging security rules.
+    """
+    from backend.security.input_guard import check_input
+    result = check_input(req.text)
+    return result.to_dict()
 
 
 @app.get("/api/filters")
