@@ -11,7 +11,7 @@ Each stage trades compute for quality. Pipeline is configurable.
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -24,6 +24,7 @@ from backend.config import (
     RRF_K,
     SEMANTIC_TOP_K,
 )
+from backend.rag.metrics import LatencyTracker
 
 logger = logging.getLogger(__name__)
 
@@ -170,21 +171,40 @@ def retrieve(
     where_filter: Optional[Dict] = None,
     skip_rerank: bool = False,
     skip_mmr: bool = False,
-) -> List[Dict]:
+    return_metrics: bool = False,
+) -> Tuple[List[Dict], Optional[Dict]]:
     """
     Main retrieval entry point: 4-stage pipeline.
 
-    Returns list of {doc_id, content, metadata, score, rrf_score, rerank_score, mmr_score}.
+    Args:
+        query: Search query
+        top_k: Final number of documents to return
+        where_filter: Optional ChromaDB filter
+        skip_rerank: Skip LLM reranking stage
+        skip_mmr: Skip MMR diversity stage
+        return_metrics: If True, returns (docs, latency_breakdown)
+
+    Returns:
+        If return_metrics=False: List of docs
+        If return_metrics=True: (List of docs, latency_breakdown dict)
     """
     from backend.rag.bm25 import get_bm25_index
     from backend.rag.vectorstore import semantic_search
     from backend.rag.embeddings import embed_query
 
+    # Initialize latency tracker
+    tracker = LatencyTracker()
+
     # ---- Stage 1: Dual Retrieval ----
     logger.info(f"Stage 1: Dual retrieval for query: {query[:80]}...")
 
+    tracker.start("bm25")
     bm25_results = get_bm25_index().search(query, top_k=BM25_TOP_K, where_filter=where_filter)
+    tracker.end("bm25")
+
+    tracker.start("semantic")
     semantic_results = semantic_search(query, top_k=SEMANTIC_TOP_K, where_filter=where_filter)
+    tracker.end("semantic")
 
     logger.info(f"  BM25: {len(bm25_results)} results, Semantic: {len(semantic_results)} results")
 
@@ -194,14 +214,18 @@ def retrieve(
 
     # ---- Stage 2: RRF Fusion ----
     logger.info("Stage 2: Reciprocal Rank Fusion")
+    tracker.start("rrf")
     fused = reciprocal_rank_fusion([bm25_results, semantic_results])
+    tracker.end("rrf")
     logger.info(f"  RRF merged: {len(fused)} unique documents")
 
     # ---- Stage 3: LLM Re-Ranking ----
     if not skip_rerank and RERANK_ENABLED and len(fused) > top_k:
         logger.info("Stage 3: LLM Re-Ranking")
+        tracker.start("rerank")
         from backend.rag.reranker import rerank
         reranked = rerank(query, fused, top_k=RERANK_TOP_K)
+        tracker.end("rerank")
     else:
         reranked = fused[:RERANK_TOP_K]
         if skip_rerank or not RERANK_ENABLED:
@@ -210,7 +234,11 @@ def retrieve(
     # ---- Stage 4: MMR Diversity Filter ----
     if not skip_mmr and len(reranked) > top_k:
         logger.info("Stage 4: MMR Diversity Filter")
+        tracker.start("mmr")
+
+        tracker.start("embedding")
         query_embedding = embed_query(query)
+        tracker.end("embedding")
 
         # Get embeddings for MMR candidates
         doc_embeddings = {}
@@ -237,6 +265,8 @@ def retrieve(
         else:
             logger.warning("  No embeddings available, falling back to top-k")
             final = reranked[:top_k]
+
+        tracker.end("mmr")
     else:
         final = reranked[:top_k]
         if skip_mmr:
@@ -251,4 +281,7 @@ def retrieve(
         doc["bm25_score"] = bm25_match["score"] if bm25_match else 0.0
         doc["semantic_score"] = semantic_match["score"] if semantic_match else 0.0
 
-    return final
+    # Return with or without metrics
+    if return_metrics:
+        return final, tracker.get_breakdown()
+    return final, None
