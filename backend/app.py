@@ -174,19 +174,34 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
     Route and execute a user question through the appropriate agent.
     Applies guardrails (grounding, confidence, attribution) to RAG/hybrid answers.
 
+    For multi-part questions, uses the orchestrator to decompose and handle each part.
+
     Returns the unified response dict.
     """
     from backend.agents.router import classify_query
     from backend.agents.sql_agent import generate_and_execute
     from backend.agents.rag_agent import retrieve_and_generate
     from backend.agents.hybrid_agent import run_hybrid
+    from backend.agents.orchestrator import orchestrate_query
     from backend.guardrails.grounding import check_grounding
     from backend.guardrails.confidence import compute_confidence, should_refuse, REFUSAL
     from backend.guardrails.attribution import format_sources
     from backend.memory.conversation import get_conversation_memory
     from backend.memory.query_cache import get_query_cache
+    from backend.memory.query_result_cache import get_cache
 
     run_id = str(uuid.uuid4())
+
+    # Check result cache first (for identical queries)
+    result_cache = get_cache()
+    cached_result = result_cache.get(question)
+    if cached_result is not None:
+        logger.info(f"[{run_id}] Cache hit for query: {question[:50]}...")
+        cached_result["from_cache"] = True
+        cached_result["metadata"] = cached_result.get("metadata", {})
+        cached_result["metadata"]["run_id"] = run_id
+        cached_result["metadata"]["cache_hit"] = True
+        return cached_result
 
     # Ensure RAG index is built for rag/hybrid queries
     _ensure_rag_ready()
@@ -201,7 +216,27 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
     cache = get_query_cache()
     few_shot_examples = cache.get_similar_patterns()
 
-    # Route the query
+    # Try orchestration for multi-part questions first
+    orchestrated = orchestrate_query(
+        question=question,
+        session_id=session_id,
+        conversation_context=conversation_context,
+        few_shot_examples=few_shot_examples,
+    )
+    if orchestrated is not None:
+        logger.info(f"[{run_id}] Used orchestrator for multi-part question")
+        # Save to conversation memory
+        if session_id:
+            get_conversation_memory().add_turn(
+                session_id, question, orchestrated["answer"],
+                query_type="orchestrated",
+                sql_query=orchestrated.get("sql_generated"),
+            )
+        # Cache orchestrated result
+        result_cache.set(question, orchestrated)
+        return orchestrated
+
+    # Simple question: use direct routing
     query_type = classify_query(question)
     logger.info(f"[{run_id}] Query type: {query_type} — '{question[:80]}'")
 
@@ -228,7 +263,7 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
         if not result.get("error") and result.get("sql_query"):
             cache.store_pattern(question, result["sql_query"], query_type="sql")
 
-        return {
+        sql_response = {
             "query_type": "sql",
             "answer": answer,
             "result": answer,  # backward compat
@@ -245,6 +280,10 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
                 "confidence_detail": conf,
             },
         }
+        # Cache successful SQL result
+        if not result.get("error"):
+            result_cache.set(question, sql_response)
+        return sql_response
 
     elif query_type == "rag":
         result = retrieve_and_generate(
@@ -287,7 +326,7 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
                 source_doc_ids=source_ids,
             )
 
-        return {
+        rag_response = {
             "query_type": "rag",
             "answer": answer,
             "result": answer,  # backward compat
@@ -311,6 +350,10 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
                 "confidence_detail": conf,
             },
         }
+        # Cache RAG result (longer TTL since documents don't change often)
+        if conf["score"] > 0.3:  # Only cache confident results
+            result_cache.set(question, rag_response, ttl_override=7200)  # 2 hours
+        return rag_response
 
     else:  # hybrid
         result = run_hybrid(
@@ -362,7 +405,7 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
                 "unsupported_claims": grounding.get("unsupported_claims", []),
             }
 
-        return {
+        hybrid_response = {
             "query_type": "hybrid",
             "answer": answer,
             "result": answer,  # backward compat
@@ -382,6 +425,10 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
                 "confidence_detail": conf,
             },
         }
+        # Cache hybrid result
+        if not result.get("error"):
+            result_cache.set(question, hybrid_response)
+        return hybrid_response
 
 
 # ---------------------------
@@ -423,6 +470,34 @@ def _build_where_and_params(f: FilterRequest) -> Tuple[str, List[Any]]:
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "message": "Medical AI Backend Running"}
+
+
+@app.get("/api/cache/stats")
+def cache_stats():
+    """Get cache statistics for monitoring."""
+    from backend.memory.query_result_cache import get_cache
+    cache = get_cache()
+    return cache.get_info()
+
+
+@app.post("/api/cache/clear")
+def cache_clear():
+    """Clear all cached query results."""
+    from backend.memory.query_result_cache import get_cache
+    cache = get_cache()
+    cache.clear()
+    return {"status": "ok", "message": "Cache cleared"}
+
+
+@app.post("/api/db/refresh-views")
+def refresh_materialized_views():
+    """Refresh materialized views after data changes."""
+    try:
+        from backend.scripts.optimize_database import refresh_materialized_views as refresh_mv
+        refresh_mv()
+        return {"status": "ok", "message": "Materialized views refreshed"}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to refresh views: {e}")
 
 
 @app.get("/api/filters")

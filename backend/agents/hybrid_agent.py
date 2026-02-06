@@ -6,9 +6,13 @@ Two modes:
   - Assist Mode (lower confidence): suggest context but don't hard-constrain
 
 Prevents retrieval errors from contaminating SQL answers.
+
+IMPORTANT: For aggregate queries (COUNT, how many, total), filter mode is disabled
+to avoid constraining counts to only RAG-retrieved documents.
 """
 
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +22,28 @@ from backend.agents.sql_agent import generate_and_execute
 from backend.config import CONFIDENCE_THRESHOLDS
 
 logger = logging.getLogger(__name__)
+
+# Patterns that indicate aggregate queries where filter mode should be disabled
+AGGREGATE_PATTERNS = [
+    r"\bhow many\b",
+    r"\bcount\b",
+    r"\btotal\b",
+    r"\bnumber of\b",
+    r"\bhow much\b",
+    r"\baverage\b",
+    r"\bsum of\b",
+    r"\bpercentage\b",
+    r"\bproportion\b",
+]
+
+
+def _is_aggregate_query(question: str) -> bool:
+    """Detect if the question is asking for an aggregate/count."""
+    lower = question.lower()
+    for pattern in AGGREGATE_PATTERNS:
+        if re.search(pattern, lower):
+            return True
+    return False
 
 
 def _extract_patient_ids(docs: List[Dict]) -> List[int]:
@@ -59,8 +85,14 @@ def run_hybrid(
     # ---- Step 2: Choose mode ----
     patient_ids = _extract_patient_ids(retrieved_docs)
     high_threshold = CONFIDENCE_THRESHOLDS["hybrid"]["high"]
+    is_aggregate = _is_aggregate_query(question)
 
-    if rag_confidence >= high_threshold and 0 < len(patient_ids) <= 100:
+    # IMPORTANT: Never use filter mode for aggregate queries (COUNT, how many, etc.)
+    # Filter mode would constrain counts to only RAG-retrieved patients, giving wrong totals
+    if is_aggregate:
+        mode = "assist"
+        logger.info(f"Hybrid mode: ASSIST (aggregate query detected, filter mode disabled)")
+    elif rag_confidence >= high_threshold and 0 < len(patient_ids) <= 100:
         mode = "filter"
         logger.info(f"Hybrid mode: FILTER (confidence={rag_confidence:.2f}, patients={len(patient_ids)})")
     else:

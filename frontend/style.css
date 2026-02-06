@@ -1,48 +1,259 @@
-/* Since we use Tailwind via CDN, this file is 
-   reserved for complex properties like gradients 
-   and animations that are harder to do with utility classes. 
-*/
+/* =========================================
+   MediGraph Analytics - Modern UI Styles
+   ========================================= */
 
-/* --- Donut Chart Gradient Fallback --- */
-/* The actual gradient is calculated in app.js based on data, 
-   but this provides a smooth transition when it updates. */
-#donut-chart {
-    transition: background 1s ease-in-out;
-    /* Default fallback before JS loads */
-    background: conic-gradient(
-        #e2e8f0 0% 100%
-    );
+/* --- Base Card Style --- */
+.card {
+    background: white;
+    border-radius: 1rem;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-/* --- Scrollbar Styling (Chat Window) --- */
+.card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+/* --- Filter Select --- */
+.filter-select {
+    padding: 0.625rem 1rem;
+    padding-right: 2.5rem;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    color: #475569;
+    cursor: pointer;
+    min-width: 160px;
+    transition: all 0.2s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+/* --- Tab Buttons --- */
+.tab-btn {
+    color: #94a3b8;
+    background: transparent;
+}
+
+.tab-btn:hover {
+    color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+    color: white;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+/* --- Pagination Buttons --- */
+.pagination-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #64748b;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* --- Donut Chart --- */
+.donut-chart {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: conic-gradient(#e2e8f0 0% 100%);
+    transition: background 0.8s ease;
+}
+
+.donut-inner {
+    position: absolute;
+    width: 90px;
+    height: 90px;
+    background: white;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* --- Example Query Buttons --- */
+.example-query {
+    width: 100%;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.75rem;
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.example-query:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(99, 102, 241, 0.4);
+    transform: translateX(4px);
+}
+
+/* --- Query Type Badges --- */
+.query-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.query-badge.sql {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+}
+
+.query-badge.rag {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+}
+
+.query-badge.hybrid {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+}
+
+.query-badge.orchestrated {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+}
+
+.query-badge.inline {
+    font-size: 0.5rem;
+    padding: 0.125rem 0.375rem;
+    margin-right: 0.25rem;
+}
+
+/* --- Chat Messages --- */
+.chat-message {
+    max-width: 85%;
+    animation: messageIn 0.3s ease;
+}
+
+.chat-message.user {
+    margin-left: auto;
+}
+
+.chat-message.ai {
+    margin-right: auto;
+}
+
+.chat-message .message-content {
+    padding: 1rem 1.25rem;
+    border-radius: 1rem;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+.chat-message.user .message-content {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    border-bottom-right-radius: 0.25rem;
+}
+
+.chat-message.ai .message-content {
+    background: white;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    border-bottom-left-radius: 0.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* --- Loading Dots --- */
+.loading-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.loading-dots span {
+    width: 6px;
+    height: 6px;
+    background: #6366f1;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+/* --- Scrollbar --- */
 #chat-history::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
 }
 
 #chat-history::-webkit-scrollbar-track {
-    background: #f8fafc; /* slate-50 */
-    border-radius: 4px;
+    background: transparent;
 }
 
 #chat-history::-webkit-scrollbar-thumb {
-    background: #cbd5e1; /* slate-300 */
-    border-radius: 4px;
-    border: 2px solid #f8fafc; /* Creates padding effect */
+    background: #cbd5e1;
+    border-radius: 3px;
 }
 
 #chat-history::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8; /* slate-400 */
+    background: #94a3b8;
 }
 
 /* --- Animations --- */
 .fade-in {
-    animation: fadeIn 0.4s ease-out forwards;
+    animation: fadeIn 0.4s ease;
 }
 
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(8px);
     }
     to {
         opacity: 1;
@@ -50,25 +261,205 @@
     }
 }
 
-/* Chat Message Bubble Animation */
-.message-bubble {
-    opacity: 0;
-    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-@keyframes popIn {
+@keyframes messageIn {
     from {
         opacity: 0;
-        transform: scale(0.95) translateY(5px);
+        transform: translateY(10px) scale(0.98);
     }
     to {
         opacity: 1;
-        transform: scale(1) translateY(0);
+        transform: translateY(0) scale(1);
     }
 }
 
-/* --- Utility for Table Rows --- */
-/* Smooth expand/collapse for patient details */
-tr.hidden {
-    display: none;
+/* --- Status Badges --- */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.status-badge.good {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.status-badge.refill {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.status-badge.renewal {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.status-badge.risk {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+/* --- Table Rows --- */
+#patient-table-body tr {
+    transition: background 0.15s ease;
+}
+
+#patient-table-body tr:hover {
+    background: #f8fafc;
+}
+
+/* --- Confidence Meter --- */
+.confidence-bar {
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.confidence-bar .fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.confidence-bar .fill.high { background: linear-gradient(90deg, #10b981, #34d399); }
+.confidence-bar .fill.medium { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.confidence-bar .fill.low { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+/* --- Source Cards --- */
+.source-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.source-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* --- SQL Code Block --- */
+.sql-block {
+    background: #1e293b;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 0.75rem;
+    color: #86efac;
+    overflow-x: auto;
+    border: 1px solid #334155;
+}
+
+.sql-block .comment {
+    color: #64748b;
+}
+
+/* --- Markdown in Chat Messages --- */
+.chat-message.ai .prose {
+    font-size: 0.875rem;
+    line-height: 1.65;
+}
+
+.chat-message.ai .prose h1,
+.chat-message.ai .prose h2,
+.chat-message.ai .prose h3 {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.chat-message.ai .prose h3 {
+    font-size: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0.375rem;
+}
+
+.chat-message.ai .prose h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #334155;
+    margin-top: 0.75rem;
+    margin-bottom: 0.375rem;
+}
+
+.chat-message.ai .prose p {
+    margin-bottom: 0.625rem;
+}
+
+.chat-message.ai .prose ul,
+.chat-message.ai .prose ol {
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+}
+
+.chat-message.ai .prose li {
+    margin-bottom: 0.25rem;
+}
+
+.chat-message.ai .prose strong {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.chat-message.ai .prose code {
+    background: #f1f5f9;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-size: 0.8em;
+    color: #6366f1;
+}
+
+.chat-message.ai .prose hr {
+    margin: 0.75rem 0;
+    border-color: #e2e8f0;
+}
+
+.chat-message.ai .prose blockquote {
+    border-left: 3px solid #6366f1;
+    padding-left: 0.75rem;
+    margin: 0.5rem 0;
+    color: #64748b;
+    font-style: italic;
+}
+
+.chat-message.ai .prose table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.75rem 0;
+    font-size: 0.8rem;
+}
+
+.chat-message.ai .prose th,
+.chat-message.ai .prose td {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+}
+
+.chat-message.ai .prose th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #334155;
+}
+
+.chat-message.ai .prose tr:nth-child(even) {
+    background: #fafafa;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+    .example-query span:last-child {
+        display: none;
+    }
+
+    .filter-select {
+        min-width: 140px;
+    }
 }

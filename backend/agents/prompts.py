@@ -36,6 +36,21 @@ DATABASE FACTS (VERY IMPORTANT):
 - To return medications, you MUST use prescriptions.
 - Link condition -> meds via patient_id (JOIN clinical_notes.patient_id = prescriptions.patient_id).
 
+PRE-COMPUTED TABLES (USE THESE FOR FAST AGGREGATIONS):
+For aggregate queries (counts, "most common", "top N"), prefer these pre-computed tables:
+- mv_condition_stats: condition_name, patient_count, note_count, first_seen, last_seen
+  Example: "How many patients have diabetes?" -> SELECT patient_count FROM mv_condition_stats WHERE condition_name LIKE '%Diabetes%'
+- mv_clinic_stats: clinic_id, clinic_name, location, total_patients, total_notes, doctor_count, conditions_treated
+  Example: "Which clinic has most patients?" -> SELECT clinic_name, total_patients FROM mv_clinic_stats ORDER BY total_patients DESC LIMIT 1
+- mv_doctor_stats: doctor_name, patients_seen, total_visits, conditions_treated, first_visit, last_visit
+  Example: "Who is the busiest doctor?" -> SELECT doctor_name, patients_seen FROM mv_doctor_stats ORDER BY patients_seen DESC LIMIT 1
+- mv_medication_stats: medication_name, prescription_count, patient_count, active_count, avg_refills_remaining
+  Example: "Most prescribed medication?" -> SELECT medication_name, prescription_count FROM mv_medication_stats ORDER BY prescription_count DESC LIMIT 1
+
+WHEN TO USE mv_* TABLES:
+- Use mv_* for: "how many patients with X", "most common", "top N", "busiest", "most prescribed"
+- Use base tables for: specific patient lookups, date ranges, complex JOINs, detailed records
+
 HARD RULES:
 1) Output ONLY the SQL query. No explanations. No markdown.
 2) NEVER use parameter placeholders (?, :param, $1). Inline literals instead.
@@ -163,3 +178,52 @@ Related clinical context:
 
 Generate the SQL query as instructed, using this context to inform your understanding of
 relevant patients, conditions, and terminology."""
+
+# ---- QUESTION DECOMPOSITION ----
+DECOMPOSE_PROMPT = """You are a query analyzer for a medical database system.
+
+Analyze if this question has MULTIPLE DISTINCT parts that require different data sources.
+
+Our system has:
+- SQL: For counts, aggregations, lists from structured database (patients, prescriptions, clinics)
+- RAG: For understanding clinical note TEXT content (symptoms, treatments described in notes)
+- KNOWLEDGE: For general medical knowledge NOT in our database (disease causes, mechanisms)
+
+Question: {question}
+
+If the question has multiple distinct parts, decompose it. If it's a single focused question, return it as-is.
+
+Return a JSON array of sub-questions with their suggested route:
+[
+  {{"sub_question": "How many patients have gout?", "route": "sql", "depends_on": null}},
+  {{"sub_question": "What symptoms are mentioned in gout clinical notes?", "route": "rag", "depends_on": null}},
+  {{"sub_question": "What causes gout?", "route": "knowledge", "depends_on": null}}
+]
+
+Rules:
+1. Only decompose if there are genuinely DIFFERENT information needs
+2. "route" must be one of: "sql", "rag", "hybrid", "knowledge"
+3. Use "sql" for: counts, lists, aggregations, specific record lookups
+4. Use "rag" for: what notes SAY about symptoms, treatments, observations
+5. Use "knowledge" for: general medical facts not stored in our database (causes, mechanisms, pathophysiology)
+6. Use "hybrid" ONLY when a single sub-question needs BOTH note content AND structured data
+7. "depends_on" is the index (0-based) of a sub-question this one depends on, or null
+8. Keep sub-questions concise and focused
+9. Return ONLY the JSON array, no other text
+10. If the question is already simple/focused, return a single-element array"""
+
+COMBINE_ANSWERS_PROMPT = """You are a medical assistant combining answers to a multi-part question.
+
+Original question: {original_question}
+
+Sub-questions and their answers:
+{sub_answers}
+
+Combine these into a single coherent response that:
+1. Addresses each part of the original question
+2. Clearly attributes information (from database vs from clinical notes vs general knowledge)
+3. Is well-organized with clear structure
+4. Acknowledges when information is not available
+5. Does NOT invent facts - only use what's in the provided answers
+
+Write a natural, helpful response."""

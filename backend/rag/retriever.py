@@ -61,6 +61,15 @@ def reciprocal_rank_fusion(
     return results
 
 
+def _cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    """Compute cosine similarity with numerical stability."""
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
+    if norm1 < 1e-10 or norm2 < 1e-10:
+        return 0.0
+    return float(np.dot(vec1, vec2) / (norm1 * norm2))
+
+
 def maximal_marginal_relevance(
     docs: List[Dict],
     query_embedding: List[float],
@@ -74,6 +83,11 @@ def maximal_marginal_relevance(
     MMR(d) = λ * Relevance(d, query) - (1-λ) * max(Similarity(d, d_selected))
 
     λ=0.7 prioritizes relevance while ensuring diversity.
+
+    Improvements:
+    - Pre-compute all document vectors as numpy arrays
+    - Cache similarity computations
+    - Better numerical stability
     """
     if not docs:
         return []
@@ -81,23 +95,43 @@ def maximal_marginal_relevance(
     if len(docs) <= top_k:
         return docs
 
-    query_vec = np.array(query_embedding)
+    query_vec = np.array(query_embedding, dtype=np.float32)
 
-    # Compute relevance scores (cosine sim with query)
-    relevance = {}
+    # Pre-compute document vectors and relevance scores
+    doc_vectors: Dict[str, np.ndarray] = {}
+    relevance: Dict[str, float] = {}
+
     for doc in docs:
         doc_id = doc["doc_id"]
         if doc_id in doc_embeddings:
-            doc_vec = np.array(doc_embeddings[doc_id])
-            sim = np.dot(query_vec, doc_vec) / (
-                np.linalg.norm(query_vec) * np.linalg.norm(doc_vec) + 1e-10
-            )
-            relevance[doc_id] = float(sim)
+            doc_vec = np.array(doc_embeddings[doc_id], dtype=np.float32)
+            doc_vectors[doc_id] = doc_vec
+            relevance[doc_id] = _cosine_similarity(query_vec, doc_vec)
         else:
-            # Use existing score as fallback
-            relevance[doc_id] = doc.get("rerank_score", doc.get("rrf_score", doc.get("score", 0.0)))
+            # Use existing score as fallback (normalize to 0-1 range)
+            score = doc.get("rerank_score", doc.get("rrf_score", doc.get("score", 0.0)))
+            relevance[doc_id] = min(1.0, max(0.0, score))
+
+    # Pre-compute similarity matrix for efficiency (only for docs with embeddings)
+    doc_ids_with_vectors = list(doc_vectors.keys())
+    n = len(doc_ids_with_vectors)
+    sim_matrix: Dict[tuple, float] = {}
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            id1, id2 = doc_ids_with_vectors[i], doc_ids_with_vectors[j]
+            sim = _cosine_similarity(doc_vectors[id1], doc_vectors[id2])
+            sim_matrix[(id1, id2)] = sim
+            sim_matrix[(id2, id1)] = sim
+
+    def get_doc_similarity(id1: str, id2: str) -> float:
+        """Get cached similarity between two documents."""
+        if id1 == id2:
+            return 1.0
+        return sim_matrix.get((id1, id2), 0.0)
 
     selected: List[Dict] = []
+    selected_ids: set = set()
     remaining = list(docs)
 
     for _ in range(min(top_k, len(docs))):
@@ -110,16 +144,10 @@ def maximal_marginal_relevance(
 
             # Max similarity to already selected docs
             max_sim = 0.0
-            if selected and doc_id in doc_embeddings:
-                doc_vec = np.array(doc_embeddings[doc_id])
-                for sel in selected:
-                    sel_id = sel["doc_id"]
-                    if sel_id in doc_embeddings:
-                        sel_vec = np.array(doc_embeddings[sel_id])
-                        sim = np.dot(doc_vec, sel_vec) / (
-                            np.linalg.norm(doc_vec) * np.linalg.norm(sel_vec) + 1e-10
-                        )
-                        max_sim = max(max_sim, float(sim))
+            if selected_ids:
+                for sel_id in selected_ids:
+                    sim = get_doc_similarity(doc_id, sel_id)
+                    max_sim = max(max_sim, sim)
 
             mmr_score = lambda_param * rel - (1 - lambda_param) * max_sim
 
@@ -128,8 +156,10 @@ def maximal_marginal_relevance(
                 best_idx = i
 
         chosen = remaining.pop(best_idx)
-        chosen["mmr_score"] = best_score
+        chosen["mmr_score"] = round(best_score, 4)
+        chosen["mmr_relevance"] = round(relevance.get(chosen["doc_id"], 0.0), 4)
         selected.append(chosen)
+        selected_ids.add(chosen["doc_id"])
 
     return selected
 
@@ -189,9 +219,12 @@ def retrieve(
             collection = get_collection()
             candidate_ids = [d["doc_id"] for d in reranked]
             result = collection.get(ids=candidate_ids, include=["embeddings"])
-            if result and result["embeddings"]:
+            # Fix: Check embeddings exists and has content (avoiding numpy truthiness issue)
+            if result and result.get("embeddings") is not None and len(result["embeddings"]) > 0:
                 for i, doc_id in enumerate(result["ids"]):
-                    doc_embeddings[doc_id] = result["embeddings"][i]
+                    if i < len(result["embeddings"]) and result["embeddings"][i] is not None:
+                        doc_embeddings[doc_id] = result["embeddings"][i]
+                logger.info(f"  Fetched {len(doc_embeddings)} embeddings for MMR")
         except Exception as e:
             logger.warning(f"Could not fetch embeddings for MMR: {e}")
 
@@ -200,7 +233,9 @@ def retrieve(
                 reranked, query_embedding, doc_embeddings,
                 lambda_param=MMR_LAMBDA, top_k=top_k,
             )
+            logger.info(f"  MMR selected {len(final)} diverse documents")
         else:
+            logger.warning("  No embeddings available, falling back to top-k")
             final = reranked[:top_k]
     else:
         final = reranked[:top_k]

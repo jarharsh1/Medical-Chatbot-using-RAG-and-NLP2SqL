@@ -98,10 +98,18 @@ def generate_and_execute(
 
     Returns {sql_query, query_result, error, iterations, generation_time_ms}.
     """
+    from backend.agents.query_rewriter import rewrite_for_sql
+
     start = time.time()
     llm = _get_llm()
     db = _get_db()
-    schema = get_relevant_schema(question)
+
+    # Rewrite vague questions into precise SQL-friendly queries
+    rewritten_question = rewrite_for_sql(question)
+    if rewritten_question != question:
+        logger.info(f"Query rewritten for SQL: {question[:50]} → {rewritten_question[:50]}")
+
+    schema = get_relevant_schema(rewritten_question)
 
     error = None
     sql_query = ""
@@ -123,7 +131,7 @@ def generate_and_execute(
 
         user_prompt = SQL_USER_PROMPT.format(
             schema=schema,
-            question=question,
+            question=rewritten_question,
             error_context=error_context,
             few_shot_context=few_shot_context,
         )

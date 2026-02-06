@@ -27,7 +27,14 @@ for path in [
 # ---------------------------
 # MODELS
 # ---------------------------
-LLM_MODEL = "llama3.2"
+# Recommended models (in order of capability):
+#   - qwen2.5:14b     (best overall, needs ~9GB VRAM)
+#   - llama3.1:8b     (good balance, needs ~5GB VRAM)
+#   - deepseek-coder-v2:16b  (best for SQL, needs ~10GB VRAM)
+#   - llama3.2        (fast but weak, needs ~2GB VRAM)
+#
+# To switch: ollama pull <model_name>, then change LLM_MODEL below
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen2.5:14b")
 LLM_TEMPERATURE = 0
 EMBED_MODEL = "nomic-embed-text"
 EMBED_MODEL_VERSION = "1.0"
