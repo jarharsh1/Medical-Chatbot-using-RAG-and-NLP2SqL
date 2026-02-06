@@ -189,8 +189,34 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
     from backend.memory.conversation import get_conversation_memory
     from backend.memory.query_cache import get_query_cache
     from backend.memory.query_result_cache import get_cache
+    from backend.reliability.ollama_health import (
+        check_ollama_health,
+        OllamaStatus,
+        get_user_friendly_error,
+    )
 
     run_id = str(uuid.uuid4())
+
+    # Check Ollama health before processing (uses cached result, so fast)
+    ollama_health = check_ollama_health()
+    if ollama_health.status == OllamaStatus.UNAVAILABLE:
+        error_msg = get_user_friendly_error(ollama_health.status, ollama_health.error_message)
+        logger.error(f"[{run_id}] Ollama unavailable: {error_msg}")
+        return {
+            "query_type": "error",
+            "answer": error_msg,
+            "result": error_msg,
+            "sql_generated": None,
+            "confidence": 0.0,
+            "sources": [],
+            "grounding": None,
+            "clarification": None,
+            "error": "ollama_unavailable",
+            "metadata": {
+                "run_id": run_id,
+                "ollama_status": ollama_health.to_dict(),
+            },
+        }
 
     # Check result cache first (for identical queries)
     result_cache = get_cache()
@@ -469,7 +495,49 @@ def _build_where_and_params(f: FilterRequest) -> Tuple[str, List[Any]]:
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "message": "Medical AI Backend Running"}
+    """
+    Health check endpoint with Ollama status.
+
+    Returns:
+        - status: "ok" if backend running, "degraded" if Ollama has issues
+        - ollama: detailed Ollama health information
+    """
+    from backend.reliability.ollama_health import check_ollama_health, OllamaStatus
+
+    ollama_health = check_ollama_health()
+
+    # Determine overall status
+    if ollama_health.status == OllamaStatus.HEALTHY:
+        status = "ok"
+        message = "Medical AI Backend Running"
+    elif ollama_health.status == OllamaStatus.DEGRADED:
+        status = "degraded"
+        message = f"Backend running but Ollama missing models: {', '.join(ollama_health.missing_models)}"
+    else:
+        status = "degraded"
+        message = ollama_health.error_message or "Ollama unavailable"
+
+    return {
+        "status": status,
+        "message": message,
+        "ollama": ollama_health.to_dict(),
+    }
+
+
+@app.get("/api/ollama/status")
+def ollama_status():
+    """
+    Check Ollama service status independently.
+
+    Returns detailed information about:
+    - Whether Ollama is running
+    - Which models are loaded
+    - Which required models are missing
+    - Latency to Ollama service
+    """
+    from backend.reliability.ollama_health import check_ollama_health
+    health = check_ollama_health(force_refresh=True)
+    return health.to_dict()
 
 
 @app.get("/api/cache/stats")
@@ -672,6 +740,10 @@ def query_ai(req: QueryRequest):
             session_id=req.session_id,
         )
 
+        # Handle Ollama unavailable gracefully (return response, not error)
+        if response.get("error") == "ollama_unavailable":
+            return response
+
         if response.get("error") and not response.get("answer"):
             raise Exception(response["error"])
 
@@ -694,6 +766,25 @@ def query_ai(req: QueryRequest):
     except HTTPException:
         raise
     except Exception as e:
+        # Check if it's an Ollama connection error
+        error_str = str(e).lower()
+        if "connect" in error_str and ("11434" in error_str or "ollama" in error_str):
+            from backend.reliability.ollama_health import (
+                OllamaStatus,
+                get_user_friendly_error,
+            )
+            return {
+                "query_type": "error",
+                "answer": get_user_friendly_error(OllamaStatus.UNAVAILABLE),
+                "result": get_user_friendly_error(OllamaStatus.UNAVAILABLE),
+                "sql_generated": None,
+                "confidence": 0.0,
+                "sources": [],
+                "grounding": None,
+                "error": "ollama_unavailable",
+                "metadata": {},
+            }
+
         logger.exception(f"Query failed: {e}")
         raise HTTPException(500, detail=str(e))
 

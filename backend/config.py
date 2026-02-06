@@ -104,3 +104,12 @@ SQL_BANNED_OPS = ["insert", "update", "delete", "drop", "alter", "create", "prag
 # ---------------------------
 SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 8000
+
+# ---------------------------
+# OLLAMA / RELIABILITY
+# ---------------------------
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_TIMEOUT_SECONDS = 120  # Max time for LLM calls
+OLLAMA_HEALTH_CACHE_TTL = 30  # Seconds between health checks
+OLLAMA_RETRY_ATTEMPTS = 2     # Retries on transient failures
+OLLAMA_RETRY_BACKOFF = 1.0    # Seconds between retries
