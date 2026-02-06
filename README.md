@@ -1,147 +1,198 @@
----
+# Medical AI Analytics Platform
 
-# 🏥 Medical AI Analytics Backend (Local & Private)
-
-A **privacy-first** backend for medical analytics. This system provides a prescription adherence dashboard and a powerful **Text-to-SQL AI Agent** that allows doctors/admins to query patient data using natural language—all running **100% locally** without external API costs.
+A **privacy-first** medical analytics system combining **RAG (Retrieval-Augmented Generation)** and **NLP-to-SQL** capabilities. Features a multi-agent architecture that intelligently routes queries to the right data source—all running **100% locally** via Ollama.
 
 ---
 
-## ⚡ Key Features
+## Key Features
 
-* **🔒 Privacy First**: No patient data leaves your machine. The AI (Llama 3.2) runs locally via Ollama.
-* **🧠 Agentic SQL Generation**: Uses **LangGraph** to fetch schemas, generate SQL, validate queries, and auto-correct errors before execution.
-* **🛡️ Ultra-Safe Execution**: Includes regex-based SQL cleaning and strict validation to prevent dangerous queries (DROP, DELETE, UPDATE).
-* **📊 Adherence Dashboard**: auto-calculates patient risk scores based on prescription refill gaps.
-* **🔌 Auto-Bootstrap**: Automatically imports CSV data (`patients.csv`, `clinical_notes.csv`, etc.) into SQLite on startup.
+| Feature | Description |
+|---------|-------------|
+| **Privacy First** | No data leaves your machine. LLM (qwen2.5:14b) + embeddings run locally via Ollama |
+| **Multi-Agent System** | 4 specialized agents: SQL, RAG, Hybrid, Knowledge |
+| **Query Orchestration** | Decomposes complex multi-part questions automatically |
+| **4-Stage RAG Pipeline** | BM25 + Semantic search → RRF fusion → LLM reranking → MMR diversity |
+| **Scalable to 1M+ rows** | 27 database indexes, 6 materialized views, LRU query cache |
+| **Guardrails** | Grounding validation, confidence scoring, source attribution |
+| **Modern UI** | Full-width responsive dashboard with markdown rendering |
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-The system uses a **LangGraph** state machine to ensure reliable SQL generation.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        User Question                             │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Query Orchestrator                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │ Decomposer  │→ │   Router    │→ │  Query Result Cache     │  │
+│  │(multi-part) │  │(SQL/RAG/etc)│  │  (LRU, 1hr TTL)         │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+        ┌─────────────────┼─────────────────┬─────────────────┐
+        ▼                 ▼                 ▼                 ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│   SQL Agent   │ │   RAG Agent   │ │ Hybrid Agent  │ │Knowledge Agent│
+│               │ │               │ │               │ │               │
+│ - Schema-aware│ │ - 4-stage     │ │ - Filter mode │ │ - General     │
+│ - MV-optimized│ │   retrieval   │ │ - Assist mode │ │   medical     │
+│ - Few-shot    │ │ - LLM rerank  │ │ - Combines    │ │   knowledge   │
+│ - Retry logic │ │ - MMR diverse │ │   SQL + RAG   │ │               │
+└───────┬───────┘ └───────┬───────┘ └───────┬───────┘ └───────┬───────┘
+        │                 │                 │                 │
+        └─────────────────┴─────────────────┴─────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Guardrails                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │  Grounding  │  │ Confidence  │  │  Source Attribution     │  │
+│  │ Validation  │  │  Scoring    │  │  [Note X] citations     │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-```mermaid
-graph TD
-    A[User Question] --> B(Get DB Schema);
-    B --> C{Generate SQL via Ollama};
-    C -->|Output| D[Strict Regex Cleaning];
-    D --> E{Validate SQL};
-    E -- Invalid --> C;
-    E -- Valid --> F[Execute on SQLite];
-    F -- Error --> C;
-    F -- Success --> G[Return Results];
-    
-    style C fill:#f9f,stroke:#333,stroke-width:2px
-    style D fill:#bbf,stroke:#333,stroke-width:2px
-    style G fill:#9f9,stroke:#333,stroke-width:2px
+### RAG Pipeline (4 Stages)
 
+```
+Query → [BM25 + Semantic] → RRF Fusion → LLM Reranker → MMR Filter → Context
+         (dual retrieval)    (k=60)      (relevance)    (diversity)
 ```
 
 ---
 
-## 🚀 Getting Started
+## Tech Stack
 
-### 1. Prerequisites
+| Component | Technology |
+|-----------|------------|
+| **LLM** | qwen2.5:14b via Ollama |
+| **Embeddings** | nomic-embed-text (768-dim) |
+| **Vector Store** | ChromaDB (local) |
+| **Database** | SQLite with indexes + materialized views |
+| **Backend** | FastAPI + Python |
+| **Frontend** | Tailwind CSS + vanilla JS |
 
-* **Python 3.10+**
-* **Ollama**: [Download here](https://ollama.com/)
-* **Data**: Ensure you have your CSV files in a `data/` folder.
+---
 
-### 2. Install Dependencies
+## Getting Started
 
-Create a `requirements.txt` file (or just install directly):
+### Prerequisites
+
+- Python 3.10+
+- [Ollama](https://ollama.com/) installed and running
+
+### Installation
 
 ```bash
-pip install fastapi uvicorn langchain-ollama langchain-community langgraph pydantic sqlite3
+# Clone the repository
+git clone https://github.com/jarharsh1/Medical-Chatbot-using-RAG-and-NLP2SqL.git
+cd Medical-Chatbot-using-RAG-and-NLP2SqL
 
+# Install dependencies
+pip install -r requirements.txt
+
+# Pull required Ollama models
+ollama pull qwen2.5:14b
+ollama pull nomic-embed-text
 ```
 
-### 3. Setup Local AI Model
-
-This project uses **Llama 3.2** for its speed and accuracy in SQL generation.
+### Run the Server
 
 ```bash
-# Start Ollama service (if not running)
-ollama serve
-
-# Pull the model
-ollama pull llama3.2
-
+python -m backend.app
 ```
 
-### 4. Folder Structure
+Open http://localhost:8000 in your browser.
 
-Ensure your project looks like this so the auto-importer works:
+---
 
-```text
-/project-root
-│
-├── app.py                # The main FastAPI backend
-├── medical_records.db    # Auto-generated by app.py
-│
-└── data/                 # PLACE YOUR CSVs HERE
-    ├── clinics.csv
-    ├── patients.csv
-    ├── clinical_notes.csv
-    └── prescriptions.csv
+## Project Structure
 
+```
+├── backend/
+│   ├── app.py                 # FastAPI main application
+│   ├── config.py              # Centralized constants
+│   ├── agents/
+│   │   ├── router.py          # Query classification
+│   │   ├── sql_agent.py       # Text-to-SQL generation
+│   │   ├── rag_agent.py       # RAG-based answers
+│   │   ├── hybrid_agent.py    # Combined SQL + RAG
+│   │   ├── orchestrator.py    # Multi-part question handling
+│   │   ├── decomposer.py      # Question decomposition
+│   │   └── query_rewriter.py  # Vague → measurable queries
+│   ├── rag/
+│   │   ├── retriever.py       # 4-stage retrieval pipeline
+│   │   ├── vectorstore.py     # ChromaDB integration
+│   │   ├── bm25.py            # BM25 sparse retrieval
+│   │   ├── reranker.py        # LLM-based reranking
+│   │   └── embeddings.py      # Ollama embeddings
+│   ├── guardrails/
+│   │   ├── grounding.py       # Hallucination detection
+│   │   ├── confidence.py      # Margin-based scoring
+│   │   └── attribution.py     # Source citation
+│   ├── memory/
+│   │   ├── conversation.py    # Session memory
+│   │   └── query_result_cache.py  # LRU cache
+│   └── scripts/
+│       └── optimize_database.py   # Indexes + materialized views
+├── frontend/
+│   ├── index.html             # Main UI
+│   ├── app.js                 # Frontend logic
+│   └── style.css              # Custom styles
+└── data/                      # CSV data files
 ```
 
 ---
 
-## 🏃‍♂️ Usage
+## Example Queries
 
-### Start the Server
+| Type | Example |
+|------|---------|
+| **SQL** | "How many patients have diabetes?" |
+| **RAG** | "What symptoms are mentioned in hypertension notes?" |
+| **Hybrid** | "What medications are prescribed for patients with chest pain?" |
+| **Multi-part** | "What are the top 5 clinics for hyperlipidemia patients and what treatments are recommended?" |
+| **Knowledge** | "What causes gout?" |
 
-Run the backend. It will automatically find an open port (defaulting to 8000).
+---
 
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/query` | Main chat endpoint |
+| `GET /api/health` | Health check |
+| `GET /api/filters` | Get filter options for dashboard |
+| `POST /api/dashboard` | Fetch dashboard data |
+| `GET /api/cache/stats` | Cache statistics |
+| `POST /api/cache/clear` | Clear query cache |
+| `POST /api/db/refresh-views` | Refresh materialized views |
+
+---
+
+## Scalability Features
+
+For databases with 1M+ rows:
+
+1. **27 Database Indexes** - On frequently queried columns
+2. **6 Materialized Views** - Pre-computed aggregations:
+   - `mv_condition_stats` - Patient counts by condition
+   - `mv_clinic_stats` - Clinic performance metrics
+   - `mv_doctor_stats` - Doctor workload stats
+   - `mv_medication_stats` - Prescription analytics
+3. **Query Result Cache** - LRU with 1hr TTL, instant response on cache hit
+
+Run optimization script:
 ```bash
-python app.py
-
+python -m backend.scripts.optimize_database
 ```
 
-*You will see logs indicating "Bulk import finished" if it's the first run.*
-
-### Access the API
-
-Open your browser to the auto-generated Swagger UI:
-👉 **http://localhost:8000/docs**
-
 ---
 
-## 🧪 Example Queries (AI Chatbot)
+## License
 
-Send a POST request to `/api/query` with a JSON body: `{"question": "..."}`.
-
-| Question Type | Example Query |
-| --- | --- |
-| **Patient Counts** | *"How many patients are assigned to Dr. Abbott?"* |
-| **Trend Analysis** | *"Count the number of Diabetes diagnoses in December 2025."* |
-| **Risk Assessment** | *"List patients who have missed their refill for Metformin."* |
-| **Clinic Stats** | *"Which clinic has the most patients on 'Active' prescriptions?"* |
-
----
-
-## 🛠️ Troubleshooting
-
-**1. "Ollama not detected" error:**
-
-* Ensure the Ollama app is running in the background.
-* Run `ollama list` in your terminal to confirm `llama3.2` is installed.
-
-**2. "Table not found" errors:**
-
-* Check that your `data/` folder exists and contains the CSV files **before** running `app.py`.
-* Delete `medical_records.db` and restart the app to trigger a fresh import.
-
-**3. AI gives "Empty SQL" or weird output:**
-
-* The system includes a retry mechanism (max 3 tries). If it fails, try making your question more specific (e.g., specify "current year" or specific doctor names).
-
----
-
-## 📜 License
-
-* **Code**: MIT License
-
-* **Data**: Ensure your CSV data complies with HIPAA/GDPR regulations. This tool is for analytics and research purposes.
+- **Code**: MIT License
+- **Data**: Ensure compliance with HIPAA/GDPR regulations
