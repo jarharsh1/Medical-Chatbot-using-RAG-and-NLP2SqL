@@ -24,11 +24,10 @@
     <!-- Markdown parser for chat responses -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
-        // Configure marked for safe rendering
         marked.setOptions({
-            breaks: true,      // Convert \n to <br>
-            gfm: true,         // GitHub Flavored Markdown
-            sanitize: false    // We trust our own backend output
+            breaks: true,
+            gfm: true,
+            sanitize: false
         });
     </script>
 </head>
@@ -39,13 +38,13 @@
         <div class="w-full px-6 h-16 flex items-center justify-between">
             <div class="flex items-center gap-4">
                 <div class="relative">
-                    <div class="bg-gradient-to-br from-indigo-500 to-purple-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/25">
+                    <div class="bg-gradient-to-br from-teal-500 to-teal-600 p-2.5 rounded-xl shadow-lg" style="box-shadow: 0 4px 14px rgba(20,184,166,0.35);">
                         <i class="fa-solid fa-heart-pulse text-white text-lg"></i>
                     </div>
                     <div class="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900 animate-pulse"></div>
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold tracking-tight">MediGraph</h1>
+                    <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white to-teal-300 bg-clip-text text-transparent">MediGraph</h1>
                     <p class="text-[10px] text-slate-400 -mt-0.5 font-medium tracking-wider uppercase">Analytics Platform</p>
                 </div>
             </div>
@@ -57,7 +56,7 @@
                 </button>
                 <button onclick="switchTab('query')" id="btn-query"
                     class="tab-btn px-5 py-2 rounded-lg text-sm font-medium transition-all duration-200">
-                    <i class="fa-solid fa-message-bot mr-2"></i>AI Assistant
+                    <i class="fa-solid fa-robot mr-2"></i>AI Assistant
                 </button>
             </div>
         </div>
@@ -65,14 +64,16 @@
 
     <main class="w-full px-6 py-8">
 
-        <!-- DASHBOARD SECTION -->
+        <!-- ================================ -->
+        <!-- DASHBOARD SECTION               -->
+        <!-- ================================ -->
         <div id="dashboard-section" class="fade-in space-y-6">
 
             <!-- Header -->
             <div class="flex items-center justify-between">
                 <div>
                     <h2 class="text-2xl font-bold text-slate-800">Prescription Overview</h2>
-                    <p class="text-slate-500 text-sm mt-1">Monitor patient prescriptions and refill status</p>
+                    <p class="text-slate-500 text-sm mt-1">Monitor patient prescriptions, clinical notes, and refill status</p>
                 </div>
                 <div class="flex items-center gap-3">
                     <span class="flex items-center gap-2 text-xs text-slate-500 bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-200">
@@ -85,9 +86,12 @@
             <!-- Filters Card -->
             <div class="card p-4">
                 <div class="flex flex-wrap items-center gap-4">
-                    <div class="flex items-center gap-2 text-slate-500 text-sm font-medium">
-                        <i class="fa-solid fa-filter"></i>
-                        <span>Filters</span>
+                    <!-- Search bar -->
+                    <div class="relative flex-1 min-w-[220px]">
+                        <i class="fa-solid fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input type="text" id="filter-search"
+                            class="notes-search-input"
+                            placeholder="Search patients, medications, notes...">
                     </div>
                     <div class="h-6 w-px bg-slate-200"></div>
                     <select id="filter-clinic" class="filter-select">
@@ -99,7 +103,7 @@
                     <select id="filter-condition" class="filter-select">
                         <option value="">All Conditions</option>
                     </select>
-                    <button onclick="resetFilters()" class="ml-auto text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-colors flex items-center gap-1.5">
+                    <button onclick="resetFilters()" class="text-sm text-teal-600 hover:text-teal-700 font-medium transition-colors flex items-center gap-1.5">
                         <i class="fa-solid fa-rotate-left text-xs"></i>
                         Reset
                     </button>
@@ -108,47 +112,43 @@
 
             <!-- Stats Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                <!-- Total Prescriptions -->
-                <div class="card p-5 flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+                <div class="card kpi-card card-stagger p-5 flex items-center gap-4 group">
+                    <div class="kpi-icon w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg transition-shadow" style="box-shadow: 0 4px 12px rgba(20,184,166,0.25);">
                         <i class="fa-solid fa-prescription text-white text-lg"></i>
                     </div>
                     <div>
                         <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Total Rx</p>
-                        <p id="total-rx" class="text-2xl font-bold text-slate-800">0</p>
+                        <p id="total-rx" class="text-2xl font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
 
-                <!-- At Risk -->
-                <div class="card p-5 flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/25">
+                <div class="card kpi-card card-stagger p-5 flex items-center gap-4 group">
+                    <div class="kpi-icon w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg transition-shadow" style="box-shadow: 0 4px 12px rgba(239,68,68,0.25);">
                         <i class="fa-solid fa-triangle-exclamation text-white text-lg"></i>
                     </div>
                     <div>
                         <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">At Risk</p>
-                        <p id="count-risk" class="text-2xl font-bold text-slate-800">0</p>
+                        <p id="count-risk" class="text-2xl font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
 
-                <!-- Refill Due -->
-                <div class="card p-5 flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/25">
+                <div class="card kpi-card card-stagger p-5 flex items-center gap-4 group">
+                    <div class="kpi-icon w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg transition-shadow" style="box-shadow: 0 4px 12px rgba(245,158,11,0.25);">
                         <i class="fa-solid fa-clock text-white text-lg"></i>
                     </div>
                     <div>
                         <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Due Soon</p>
-                        <p id="count-due" class="text-2xl font-bold text-slate-800">0</p>
+                        <p id="count-due" class="text-2xl font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
 
-                <!-- Active -->
-                <div class="card p-5 flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/25">
+                <div class="card kpi-card card-stagger p-5 flex items-center gap-4 group">
+                    <div class="kpi-icon w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-lg transition-shadow" style="box-shadow: 0 4px 12px rgba(16,185,129,0.25);">
                         <i class="fa-solid fa-circle-check text-white text-lg"></i>
                     </div>
                     <div>
                         <p class="text-xs text-slate-500 font-medium uppercase tracking-wider">Active</p>
-                        <p id="count-active" class="text-2xl font-bold text-slate-800">0</p>
+                        <p id="count-active" class="text-2xl font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
             </div>
@@ -163,8 +163,8 @@
                             <h3 class="font-semibold text-slate-800">Status Distribution</h3>
                             <p class="text-xs text-slate-500 mt-0.5">Patient prescription status breakdown</p>
                         </div>
-                        <div class="p-2 bg-indigo-50 rounded-lg">
-                            <i class="fa-solid fa-chart-pie text-indigo-500"></i>
+                        <div class="p-2 bg-teal-50 rounded-lg">
+                            <i class="fa-solid fa-chart-pie text-teal-500"></i>
                         </div>
                     </div>
 
@@ -209,18 +209,16 @@
                     </div>
 
                     <div class="space-y-6">
-                        <!-- Progress -->
                         <div>
                             <div class="flex justify-between items-center mb-2">
                                 <span class="text-sm text-slate-600">Fulfillment Progress</span>
-                                <span id="fulfill-rate" class="text-lg font-bold text-indigo-600">0%</span>
+                                <span id="fulfill-rate" class="text-lg font-bold text-teal-600">0%</span>
                             </div>
                             <div class="h-3 bg-slate-100 rounded-full overflow-hidden">
-                                <div id="fulfill-bar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                                <div id="fulfill-bar" class="h-full bg-gradient-to-r from-teal-500 to-teal-400 rounded-full transition-all duration-1000" style="width: 0%"></div>
                             </div>
                         </div>
 
-                        <!-- Revenue Bars -->
                         <div class="flex gap-4 pt-4 border-t border-slate-100">
                             <div class="flex-1 text-center">
                                 <div class="h-24 bg-slate-50 rounded-lg flex items-end justify-center p-2 mb-2">
@@ -246,7 +244,7 @@
                 <div class="p-5 border-b border-slate-100 flex items-center justify-between">
                     <div>
                         <h3 class="font-semibold text-slate-800">Patient Records</h3>
-                        <p class="text-xs text-slate-500 mt-0.5">Click row to expand details</p>
+                        <p class="text-xs text-slate-500 mt-0.5">Click row to expand clinical notes and details</p>
                     </div>
                     <span id="record-count" class="text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full font-medium">0 records</span>
                 </div>
@@ -282,20 +280,22 @@
             </div>
         </div>
 
-        <!-- QUERY SECTION -->
+        <!-- ================================ -->
+        <!-- QUERY / AI ASSISTANT SECTION    -->
+        <!-- ================================ -->
         <div id="query-section" class="hidden fade-in">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-140px)] min-h-[600px]">
 
                 <!-- Sidebar -->
                 <div class="lg:col-span-3 xl:col-span-2">
-                    <div class="card h-full p-6 bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700 flex flex-col">
+                    <div class="card h-full p-6 bg-gradient-to-br from-slate-800 via-slate-900 to-teal-950 border-slate-700 flex flex-col">
                         <div class="mb-8">
-                            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/25">
+                            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center mb-4 shadow-lg" style="box-shadow: 0 4px 14px rgba(20,184,166,0.3);">
                                 <i class="fa-solid fa-robot text-white text-xl"></i>
                             </div>
                             <h3 class="text-xl font-bold text-white mb-2">AI Medical Assistant</h3>
                             <p class="text-sm text-slate-400 leading-relaxed">
-                                Powered by <span class="text-indigo-400 font-semibold">Qwen 2.5</span> running locally.
+                                Powered by <span class="text-teal-400 font-semibold">Qwen 2.5</span> running locally.
                                 Your data never leaves this machine.
                             </p>
                         </div>
@@ -327,7 +327,7 @@
                         <div class="pt-4 border-t border-slate-700 mt-auto">
                             <div class="flex items-center gap-2 text-xs text-slate-500">
                                 <i class="fa-solid fa-shield-check text-emerald-400"></i>
-                                <span>HIPAA Compliant • Local Processing</span>
+                                <span>HIPAA Compliant &bull; Local Processing</span>
                             </div>
                         </div>
                     </div>
@@ -339,7 +339,7 @@
                         <!-- Chat Header -->
                         <div class="p-4 border-b border-slate-100 flex items-center justify-between">
                             <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
                                     <i class="fa-solid fa-sparkles text-white text-xs"></i>
                                 </div>
                                 <div>
@@ -370,13 +370,15 @@
                             </div>
                         </div>
 
-                        <!-- Loading -->
-                        <div id="chat-loading" class="hidden px-6 pb-2">
-                            <div class="flex items-center gap-2 text-sm text-indigo-600">
-                                <div class="loading-dots">
-                                    <span></span><span></span><span></span>
+                        <!-- Typing Indicator -->
+                        <div id="chat-loading" class="hidden px-6 pb-3">
+                            <div class="chat-message ai" style="animation: none;">
+                                <div class="typing-indicator">
+                                    <div class="typing-dots">
+                                        <span></span><span></span><span></span>
+                                    </div>
+                                    <span class="text-xs text-slate-400">Analyzing...</span>
                                 </div>
-                                <span>Analyzing your question...</span>
                             </div>
                         </div>
 
@@ -385,8 +387,8 @@
                             <form id="query-form" class="flex gap-3">
                                 <input type="text" id="query-input"
                                     placeholder="Ask about patients, prescriptions, or clinical notes..."
-                                    class="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
-                                <button type="submit" class="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium text-sm hover:shadow-lg hover:shadow-indigo-500/25 transition-all flex items-center gap-2">
+                                    class="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all">
+                                <button type="submit" class="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 text-white rounded-xl font-medium text-sm hover:shadow-lg transition-all flex items-center gap-2" style="box-shadow: 0 2px 8px rgba(20,184,166,0.3);">
                                     <span>Send</span>
                                     <i class="fa-solid fa-paper-plane"></i>
                                 </button>
@@ -397,6 +399,9 @@
             </div>
         </div>
     </main>
+
+    <!-- Clinical Note Modal (hidden by default) -->
+    <div id="note-modal" class="hidden"></div>
 
     <script src="app.js"></script>
 </body>

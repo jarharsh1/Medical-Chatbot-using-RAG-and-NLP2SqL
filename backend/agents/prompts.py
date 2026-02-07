@@ -62,6 +62,11 @@ HARD RULES:
    - LIMIT N
 5) prescriptions.status values are exactly 'Active' or 'Expired' (case-sensitive).
 6) Use LIKE with wildcards for text filters (e.g., condition_name LIKE '%Hypertension%').
+   When filtering conditions/diseases, use the ROOT WORD to catch all variants:
+   - "thyroidism" → LIKE '%Thyroid%' (matches "Thyroid Cancer", "Thyroidism", etc.)
+   - "diabetes" → LIKE '%Diabet%' (matches "Diabetes", "Diabetic Neuropathy", etc.)
+   - "arthritis" → LIKE '%Arthr%' (matches "Arthritis", "Osteoarthritis", etc.)
+   Always prefer shorter root terms in LIKE filters to maximize recall.
 7) One statement only.
 8) Always include a LIMIT clause (default LIMIT 100 if not specified).
 9) Never use SELECT * — always specify columns explicitly.

@@ -490,6 +490,7 @@ class FilterRequest(BaseModel):
     clinic: Optional[str] = None
     doctor: Optional[str] = None
     condition: Optional[str] = None
+    search: Optional[str] = None
 
 
 class QueryRequest(BaseModel):
@@ -516,6 +517,10 @@ def _build_where_and_params(f: FilterRequest) -> Tuple[str, List[Any]]:
     if f.condition:
         where += " AND n.condition_name = ?"
         params.append(f.condition)
+    if f.search:
+        where += " AND (p.full_name LIKE ? OR n.condition_name LIKE ? OR n.doctor_name LIKE ? OR n.note_text LIKE ? OR r.medication_name LIKE ? OR c.name LIKE ?)"
+        term = f"%{f.search}%"
+        params.extend([term] * 6)
     return where, params
 
 
@@ -657,10 +662,11 @@ def dashboard_get(
     clinic: Optional[str] = Query(None),
     doctor: Optional[str] = Query(None),
     condition: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    f = FilterRequest(clinic=_norm(clinic), doctor=_norm(doctor), condition=_norm(condition))
+    f = FilterRequest(clinic=_norm(clinic), doctor=_norm(doctor), condition=_norm(condition), search=_norm(search))
     return _dashboard_impl(f, page=page, page_size=page_size)
 
 
@@ -673,6 +679,7 @@ def dashboard_post(
     f.clinic = _norm(f.clinic)
     f.doctor = _norm(f.doctor)
     f.condition = _norm(f.condition)
+    f.search = _norm(f.search)
     return _dashboard_impl(f, page=page, page_size=page_size)
 
 
@@ -717,11 +724,19 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
     # Paged table query
     offset = (page - 1) * page_size
 
+    # Check if doctor_notes column exists
+    cur.execute("PRAGMA table_info(clinical_notes)")
+    columns = [col[1] for col in cur.fetchall()]
+    has_doctor_notes = "doctor_notes" in columns
+    dn_col = ", n.doctor_notes" if has_doctor_notes else ""
+
     page_sql = f"""
         SELECT p.patient_id, p.full_name, c.name as clinic_name,
                n.doctor_name, n.condition_name, n.note_text, n.visit_date,
+               n.note_id,
                r.medication_name, r.dosage, r.days_supply, r.refills_remaining,
                r.last_filled_date, r.status as rx_status
+               {dn_col}
         {base_from}
         {where_sql}
         ORDER BY r.last_filled_date DESC
@@ -752,8 +767,12 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
             note_text = (r["note_text"] or "")
             note_snippet = note_text[:220] + ("..." if len(note_text) > 220 else "")
 
+            doctor_notes_raw = (r["doctor_notes"] or "") if has_doctor_notes else ""
+            dn_snippet = doctor_notes_raw[:300] + ("..." if len(doctor_notes_raw) > 300 else "")
+
             out_rows.append({
                 "patient_id": r["patient_id"],
+                "note_id": r["note_id"],
                 "name": r["full_name"],
                 "clinic": r["clinic_name"],
                 "doctor": r["doctor_name"],
@@ -761,6 +780,8 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
                 "medication": r["medication_name"],
                 "dosage": r["dosage"],
                 "note_snippet": note_snippet,
+                "doctor_notes_snippet": dn_snippet,
+                "has_doctor_notes": bool(doctor_notes_raw.strip()),
                 "last_visit": r["visit_date"],
                 "status": status,
                 "action": action,
@@ -856,6 +877,156 @@ def query_ai(req: QueryRequest):
 
         logger.exception(f"Query failed: {e}")
         raise HTTPException(500, detail=str(e))
+
+
+# ---------------------------
+# CLINICAL NOTES BROWSING
+# ---------------------------
+@app.get("/api/clinical-notes")
+def browse_clinical_notes(
+    search: Optional[str] = Query(None),
+    condition: Optional[str] = Query(None),
+    doctor: Optional[str] = Query(None),
+    has_doctor_notes: Optional[bool] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """Browse and search clinical notes with filters."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # Check if doctor_notes column exists
+    cur.execute("PRAGMA table_info(clinical_notes)")
+    columns = [col[1] for col in cur.fetchall()]
+    dn_exists = "doctor_notes" in columns
+    dn_col = ", n.doctor_notes" if dn_exists else ""
+
+    where_clauses = ["1=1"]
+    params: List[Any] = []
+
+    if condition:
+        where_clauses.append("n.condition_name = ?")
+        params.append(condition)
+    if doctor:
+        where_clauses.append("n.doctor_name = ?")
+        params.append(doctor)
+    if has_doctor_notes and dn_exists:
+        where_clauses.append("n.doctor_notes IS NOT NULL AND n.doctor_notes != ''")
+    if search:
+        search_clause = "(n.note_text LIKE ? OR n.condition_name LIKE ? OR p.full_name LIKE ?"
+        if dn_exists:
+            search_clause += " OR n.doctor_notes LIKE ?"
+        search_clause += ")"
+        where_clauses.append(search_clause)
+        term = f"%{search}%"
+        params.extend([term, term, term])
+        if dn_exists:
+            params.append(term)
+
+    where_sql = " AND ".join(where_clauses)
+
+    # Count
+    count_sql = f"""
+        SELECT COUNT(*) as cnt
+        FROM clinical_notes n
+        JOIN patients p ON n.patient_id = p.patient_id
+        JOIN clinics c ON p.clinic_id = c.clinic_id
+        WHERE {where_sql}
+    """
+    total = int(cur.execute(count_sql, params).fetchone()["cnt"])
+
+    # Paged results
+    offset = (page - 1) * page_size
+    data_sql = f"""
+        SELECT n.note_id, n.patient_id, n.visit_date, n.doctor_name,
+               n.condition_name, n.note_text, n.diagnosis_code,
+               p.full_name AS patient_name, c.name AS clinic_name
+               {dn_col}
+        FROM clinical_notes n
+        JOIN patients p ON n.patient_id = p.patient_id
+        JOIN clinics c ON p.clinic_id = c.clinic_id
+        WHERE {where_sql}
+        ORDER BY n.visit_date DESC
+        LIMIT ? OFFSET ?
+    """
+    rows = cur.execute(data_sql, params + [page_size, offset]).fetchall()
+    conn.close()
+
+    notes = []
+    for r in rows:
+        dn = (r["doctor_notes"] or "") if dn_exists else ""
+        notes.append({
+            "note_id": r["note_id"],
+            "patient_id": r["patient_id"],
+            "patient_name": r["patient_name"],
+            "visit_date": r["visit_date"],
+            "doctor_name": r["doctor_name"],
+            "condition_name": r["condition_name"],
+            "diagnosis_code": r["diagnosis_code"],
+            "clinic_name": r["clinic_name"],
+            "note_snippet": (r["note_text"] or "")[:200],
+            "has_doctor_notes": bool(dn.strip()),
+            "doctor_notes_snippet": dn[:300] + ("..." if len(dn) > 300 else ""),
+        })
+
+    return {
+        "notes": notes,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+        },
+    }
+
+
+@app.get("/api/clinical-notes/{note_id}")
+def get_clinical_note(note_id: int):
+    """Get full clinical note detail."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("PRAGMA table_info(clinical_notes)")
+    columns = [col[1] for col in cur.fetchall()]
+    dn_exists = "doctor_notes" in columns
+    dn_col = ", n.doctor_notes" if dn_exists else ""
+
+    row = cur.execute(f"""
+        SELECT n.note_id, n.patient_id, n.visit_date, n.doctor_name,
+               n.condition_name, n.note_text, n.diagnosis_code,
+               p.full_name AS patient_name, p.dob, p.gender,
+               p.insurance_provider, c.name AS clinic_name, c.location AS clinic_location
+               {dn_col}
+        FROM clinical_notes n
+        JOIN patients p ON n.patient_id = p.patient_id
+        JOIN clinics c ON p.clinic_id = c.clinic_id
+        WHERE n.note_id = ?
+    """, [note_id]).fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(404, "Note not found")
+
+    dn = (row["doctor_notes"] or "") if dn_exists else ""
+    return {
+        "note_id": row["note_id"],
+        "patient_id": row["patient_id"],
+        "patient_name": row["patient_name"],
+        "dob": row["dob"],
+        "gender": row["gender"],
+        "insurance_provider": row["insurance_provider"],
+        "visit_date": row["visit_date"],
+        "doctor_name": row["doctor_name"],
+        "condition_name": row["condition_name"],
+        "diagnosis_code": row["diagnosis_code"],
+        "clinic_name": row["clinic_name"],
+        "clinic_location": row["clinic_location"],
+        "note_text": row["note_text"],
+        "doctor_notes": dn,
+        "has_doctor_notes": bool(dn.strip()),
+    }
 
 
 # ---------------------------

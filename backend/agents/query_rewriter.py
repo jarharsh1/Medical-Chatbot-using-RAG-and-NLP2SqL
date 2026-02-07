@@ -42,6 +42,33 @@ REWRITE_RULES = [
      "count of distinct patients with"),
 ]
 
+# Medical term normalization: maps specific terms to their root for broader SQL matching
+# These suffixes often cause LIKE mismatches (e.g., "thyroidism" vs "Thyroid Cancer")
+MEDICAL_ROOT_MAP = {
+    "thyroidism": "thyroid",
+    "hypothyroidism": "thyroid",
+    "hyperthyroidism": "thyroid",
+    "diabetic": "diabet",
+    "diabetes": "diabet",
+    "hypertensive": "hypertens",
+    "hypertension": "hypertens",
+    "arthritis": "arthr",
+    "osteoarthritis": "arthr",
+    "rheumatoid arthritis": "arthr",
+    "asthmatic": "asthm",
+    "pneumonia": "pneumon",
+    "bronchitis": "bronch",
+    "dermatitis": "dermat",
+    "hepatitis": "hepat",
+    "gastritis": "gastr",
+    "sinusitis": "sinus",
+    "tendinitis": "tendin",
+    "anemia": "anem",
+    "anaemia": "anem",
+    "epilepsy": "epilep",
+    "epileptic": "epilep",
+}
+
 REWRITER_PROMPT = """You are a query precision specialist for a medical database.
 
 Your job is to rewrite vague or ambiguous questions into precise, measurable queries.
@@ -144,6 +171,12 @@ def rewrite_for_sql(question: str) -> str:
     hints = []
 
     lower = rewritten.lower()
+
+    # Hint: medical term root matching for LIKE filters
+    for term, root in MEDICAL_ROOT_MAP.items():
+        if term in lower:
+            hints.append(f"(Use LIKE '%{root.title()}%' for condition matching — covers all variants)")
+            break
 
     # Hint: clinic queries need JOIN with patients
     if "clinic" in lower and ("patient" in lower or "most" in lower or "count" in lower):

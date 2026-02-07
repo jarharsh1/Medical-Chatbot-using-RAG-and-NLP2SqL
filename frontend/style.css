@@ -1,27 +1,89 @@
 /* =========================================
-   MediGraph Analytics - Modern UI Styles
+   MediGraph Analytics - Medical Teal Theme
    ========================================= */
 
-/* --- Base Card Style --- */
+/* --- CSS Custom Properties --- */
+:root {
+    --teal-50: #f0fdfa;
+    --teal-100: #ccfbf1;
+    --teal-200: #99f6e4;
+    --teal-300: #5eead4;
+    --teal-400: #2dd4bf;
+    --teal-500: #14b8a6;
+    --teal-600: #0d9488;
+    --teal-700: #0f766e;
+    --teal-800: #115e59;
+    --teal-900: #134e4a;
+    --teal-950: #042f2e;
+
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.18);
+    --glass-blur: 12px;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.03);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+    --shadow-teal: 0 4px 14px rgba(20, 184, 166, 0.25);
+}
+
+/* --- Base Card Style (Glassmorphism) --- */
 .card {
-    background: white;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     border-radius: 1rem;
-    border: 1px solid rgba(226, 232, 240, 0.8);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    border: 1px solid rgba(226, 232, 240, 0.6);
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.3s ease, transform 0.3s ease, border-color 0.3s ease;
 }
 
 .card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.02);
+    box-shadow: var(--shadow-md);
+    border-color: rgba(20, 184, 166, 0.2);
+}
+
+/* --- KPI Cards --- */
+.kpi-card {
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.kpi-card:hover .kpi-icon {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.kpi-card .kpi-number {
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- Card Stagger Animation --- */
+.card-stagger:nth-child(1) { animation: cardIn 0.5s ease both; animation-delay: 0ms; }
+.card-stagger:nth-child(2) { animation: cardIn 0.5s ease both; animation-delay: 80ms; }
+.card-stagger:nth-child(3) { animation: cardIn 0.5s ease both; animation-delay: 160ms; }
+.card-stagger:nth-child(4) { animation: cardIn 0.5s ease both; animation-delay: 240ms; }
+
+@keyframes cardIn {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 /* --- Filter Select --- */
 .filter-select {
     padding: 0.625rem 1rem;
     padding-right: 2.5rem;
-    background-color: #f8fafc;
+    background-color: rgba(248, 250, 252, 0.8);
+    backdrop-filter: blur(8px);
     border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
+    border-radius: 0.75rem;
     font-size: 0.875rem;
     color: #475569;
     cursor: pointer;
@@ -36,8 +98,8 @@
 
 .filter-select:focus {
     outline: none;
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    border-color: var(--teal-500);
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
 }
 
 /* --- Tab Buttons --- */
@@ -53,8 +115,8 @@
 
 .tab-btn.active {
     color: white;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    background: linear-gradient(135deg, var(--teal-600) 0%, var(--teal-500) 100%);
+    box-shadow: 0 4px 12px rgba(20, 184, 166, 0.35);
 }
 
 /* --- Pagination Buttons --- */
@@ -74,8 +136,9 @@
 }
 
 .pagination-btn:hover:not(:disabled) {
-    background: #f8fafc;
-    border-color: #cbd5e1;
+    background: var(--teal-50);
+    border-color: var(--teal-300);
+    color: var(--teal-700);
 }
 
 .pagination-btn:disabled {
@@ -85,8 +148,8 @@
 
 /* --- Donut Chart --- */
 .donut-chart {
-    width: 140px;
-    height: 140px;
+    width: 150px;
+    height: 150px;
     border-radius: 50%;
     position: relative;
     display: flex;
@@ -94,12 +157,13 @@
     justify-content: center;
     background: conic-gradient(#e2e8f0 0% 100%);
     transition: background 0.8s ease;
+    box-shadow: 0 0 0 4px rgba(226, 232, 240, 0.4), 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
 .donut-inner {
     position: absolute;
-    width: 90px;
-    height: 90px;
+    width: 95px;
+    height: 95px;
     background: white;
     border-radius: 50%;
     display: flex;
@@ -128,7 +192,7 @@
 
 .example-query:hover {
     background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(99, 102, 241, 0.4);
+    border-color: rgba(20, 184, 166, 0.4);
     transform: translateX(4px);
 }
 
@@ -173,7 +237,7 @@
 /* --- Chat Messages --- */
 .chat-message {
     max-width: 85%;
-    animation: messageIn 0.3s ease;
+    animation: messageIn 0.35s ease;
 }
 
 .chat-message.user {
@@ -192,9 +256,10 @@
 }
 
 .chat-message.user .message-content {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, var(--teal-600) 0%, var(--teal-500) 100%);
     color: white;
     border-bottom-right-radius: 0.25rem;
+    box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3);
 }
 
 .chat-message.ai .message-content {
@@ -202,10 +267,57 @@
     color: #475569;
     border: 1px solid #e2e8f0;
     border-bottom-left-radius: 0.25rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
-/* --- Loading Dots --- */
+.chat-message .message-timestamp {
+    font-size: 0.625rem;
+    color: #94a3b8;
+    margin-top: 0.25rem;
+    padding: 0 0.25rem;
+}
+
+.chat-message.user .message-timestamp {
+    text-align: right;
+}
+
+/* --- Typing Indicator --- */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    border-bottom-left-radius: 0.25rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    max-width: fit-content;
+}
+
+.typing-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.typing-dots span {
+    width: 7px;
+    height: 7px;
+    background: var(--teal-400);
+    border-radius: 50%;
+    animation: typingBounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+.typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+.typing-dots span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0.4); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+}
+
+/* --- Loading Dots (legacy compat) --- */
 .loading-dots {
     display: flex;
     gap: 4px;
@@ -214,18 +326,13 @@
 .loading-dots span {
     width: 6px;
     height: 6px;
-    background: #6366f1;
+    background: var(--teal-500);
     border-radius: 50%;
-    animation: bounce 1.4s infinite ease-in-out both;
+    animation: typingBounce 1.4s infinite ease-in-out both;
 }
 
 .loading-dots span:nth-child(1) { animation-delay: -0.32s; }
 .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes bounce {
-    0%, 80%, 100% { transform: scale(0); }
-    40% { transform: scale(1); }
-}
 
 /* --- Scrollbar --- */
 #chat-history::-webkit-scrollbar {
@@ -264,7 +371,7 @@
 @keyframes messageIn {
     from {
         opacity: 0;
-        transform: translateY(10px) scale(0.98);
+        transform: translateY(12px) scale(0.97);
     }
     to {
         opacity: 1;
@@ -272,34 +379,55 @@
     }
 }
 
-/* --- Status Badges --- */
+/* --- Status Badges (with dot indicator) --- */
 .status-badge {
     display: inline-flex;
     align-items: center;
+    gap: 0.375rem;
     padding: 0.375rem 0.75rem;
     border-radius: 9999px;
     font-size: 0.75rem;
     font-weight: 600;
 }
 
+.status-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
 .status-badge.good {
     background: #dbeafe;
     color: #1d4ed8;
 }
+.status-badge.good::before { background: #3b82f6; }
 
 .status-badge.refill {
     background: #d1fae5;
     color: #059669;
 }
+.status-badge.refill::before { background: #10b981; }
 
 .status-badge.renewal {
     background: #fef3c7;
     color: #d97706;
 }
+.status-badge.renewal::before { background: #f59e0b; }
 
 .status-badge.risk {
     background: #fee2e2;
     color: #dc2626;
+}
+.status-badge.risk::before {
+    background: #ef4444;
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.4); }
 }
 
 /* --- Table Rows --- */
@@ -308,7 +436,7 @@
 }
 
 #patient-table-body tr:hover {
-    background: #f8fafc;
+    background: linear-gradient(90deg, rgba(240, 253, 250, 0.5), rgba(248, 250, 252, 0.8));
 }
 
 /* --- Confidence Meter --- */
@@ -413,7 +541,7 @@
     padding: 0.125rem 0.375rem;
     border-radius: 0.25rem;
     font-size: 0.8em;
-    color: #6366f1;
+    color: var(--teal-700);
 }
 
 .chat-message.ai .prose hr {
@@ -422,7 +550,7 @@
 }
 
 .chat-message.ai .prose blockquote {
-    border-left: 3px solid #6366f1;
+    border-left: 3px solid var(--teal-500);
     padding-left: 0.75rem;
     margin: 0.5rem 0;
     color: #64748b;
@@ -453,6 +581,123 @@
     background: #fafafa;
 }
 
+/* =========================================
+   Clinical Notes Tab
+   ========================================= */
+
+/* --- SOAP Badge --- */
+.soap-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(20, 184, 166, 0.1);
+    color: var(--teal-600);
+    border: 1px solid rgba(20, 184, 166, 0.2);
+}
+
+/* --- Clinical Note Modal --- */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 1rem;
+    width: 90%;
+    max-width: 700px;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    animation: modalIn 0.3s ease;
+}
+
+@keyframes modalIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+.modal-content::-webkit-scrollbar-track { background: transparent; }
+.modal-content::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+/* --- SOAP Section Styling --- */
+.soap-container {
+    background: linear-gradient(135deg, var(--teal-50), rgba(240, 253, 250, 0.5));
+    border: 1px solid rgba(20, 184, 166, 0.15);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+}
+
+.soap-section {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(20, 184, 166, 0.1);
+}
+
+.soap-section:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.soap-section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--teal-700);
+    margin-bottom: 0.375rem;
+}
+
+.soap-section-content {
+    font-size: 0.8125rem;
+    color: #475569;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+/* --- Notes Search --- */
+.notes-search-input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.75rem;
+    background: rgba(248, 250, 252, 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    font-size: 0.875rem;
+    color: #1e293b;
+    transition: all 0.2s ease;
+}
+
+.notes-search-input:focus {
+    outline: none;
+    border-color: var(--teal-500);
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+}
+
 /* --- Responsive --- */
 @media (max-width: 768px) {
     .example-query span:last-child {
@@ -462,4 +707,6 @@
     .filter-select {
         min-width: 140px;
     }
+
+
 }

@@ -76,7 +76,7 @@ def retrieve_and_generate(
 
     # ---- Retrieval ----
     t0 = time.time()
-    docs = retrieve(question, top_k=top_k, where_filter=where_filter)
+    docs, _ = retrieve(question, top_k=top_k, where_filter=where_filter)
     retrieval_time = int((time.time() - t0) * 1000)
 
     if not docs:

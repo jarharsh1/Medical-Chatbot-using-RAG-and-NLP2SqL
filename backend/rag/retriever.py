@@ -210,7 +210,7 @@ def retrieve(
 
     if not bm25_results and not semantic_results:
         logger.warning("No results from either retrieval method.")
-        return []
+        return [], None
 
     # ---- Stage 2: RRF Fusion ----
     logger.info("Stage 2: Reciprocal Rank Fusion")

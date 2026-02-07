@@ -45,8 +45,12 @@ class BM25Index:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
-        rows = cur.execute("""
-            SELECT
+        # Check if doctor_notes column exists (added by enrichment script)
+        cur.execute("PRAGMA table_info(clinical_notes)")
+        columns = [col[1] for col in cur.fetchall()]
+        has_doctor_notes = "doctor_notes" in columns
+
+        select_cols = """
                 n.note_id,
                 n.patient_id,
                 n.visit_date,
@@ -56,6 +60,12 @@ class BM25Index:
                 n.note_text,
                 p.full_name AS patient_name,
                 c.name AS clinic_name
+        """
+        if has_doctor_notes:
+            select_cols += ", n.doctor_notes"
+
+        rows = cur.execute(f"""
+            SELECT {select_cols}
             FROM clinical_notes n
             JOIN patients p ON n.patient_id = p.patient_id
             JOIN clinics c ON p.clinic_id = c.clinic_id
@@ -67,7 +77,10 @@ class BM25Index:
         tokenized_corpus = []
 
         for row in rows:
-            text = (row["note_text"] or "").strip()
+            note_text = (row["note_text"] or "").strip()
+            doctor_notes = (row["doctor_notes"] or "").strip() if has_doctor_notes else ""
+            # Combine note_text + doctor_notes so BM25 covers SOAP content
+            text = f"{note_text} {doctor_notes}".strip() if doctor_notes else note_text
             if not text:
                 continue
 
