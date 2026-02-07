@@ -12,7 +12,7 @@ import logging
 import os
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
@@ -110,6 +110,51 @@ def init_db():
         _load_csv_to_table(conn, "patients.csv", "patients")
         _load_csv_to_table(conn, "clinical_notes.csv", "clinical_notes")
         _load_csv_to_table(conn, "prescriptions.csv", "prescriptions")
+
+    # Enrich: give ~30% of patients a 2nd prescription (once)
+    cursor.execute("SELECT MAX(rx_id) FROM prescriptions")
+    max_rx = cursor.fetchone()[0] or 0
+    cursor.execute("SELECT COUNT(*) FROM prescriptions")
+    original_count = cursor.fetchone()[0]
+    if max_rx > 0 and original_count <= max_rx + 100:
+        # Pick ~30% of patients to get a 2nd prescription
+        source_rows = cursor.execute("""
+            SELECT patient_id FROM prescriptions
+            ORDER BY RANDOM() LIMIT ? / 3
+        """, (original_count,)).fetchall()
+        meds = ['Metformin', 'Atorvastatin', 'Omeprazole', 'Amlodipine', 'Losartan', 'Gabapentin']
+        doses = ['10mg once daily', '20mg twice daily', '500mg once daily', '25mg once daily']
+        supplies = [30, 60, 90]
+        import random
+        new_rows = []
+        for i, (pid,) in enumerate(source_rows):
+            new_rx_id = max_rx + 1 + i
+            med = meds[i % len(meds)]
+            dose = doses[i % len(doses)]
+            ds = supplies[i % len(supplies)]
+            refills = i % 4
+            days_offset = i % 120
+            fill_date = (datetime.strptime("2025-10-01", "%Y-%m-%d") + timedelta(days=days_offset)).strftime("%Y-%m-%d")
+            new_rows.append((new_rx_id, pid, med, dose, ds, refills, fill_date, 'Active'))
+        cursor.executemany(
+            "INSERT INTO prescriptions VALUES (?,?,?,?,?,?,?,?)", new_rows
+        )
+        conn.commit()
+
+    # Enrich: mark ~12% of prescriptions as "Not Purchased" (once)
+    cursor.execute("SELECT COUNT(*) FROM prescriptions WHERE status='Not Purchased'")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+            UPDATE prescriptions
+            SET status = 'Not Purchased', last_filled_date = NULL
+            WHERE rx_id IN (
+                SELECT rx_id FROM prescriptions
+                WHERE status = 'Active'
+                ORDER BY RANDOM()
+                LIMIT (SELECT COUNT(*) FROM prescriptions) / 8
+            )
+        """)
+        conn.commit()
 
     conn.close()
 
@@ -491,6 +536,8 @@ class FilterRequest(BaseModel):
     doctor: Optional[str] = None
     condition: Optional[str] = None
     search: Optional[str] = None
+    from_date: Optional[str] = None
+    to_date: Optional[str] = None
 
 
 class QueryRequest(BaseModel):
@@ -521,6 +568,12 @@ def _build_where_and_params(f: FilterRequest) -> Tuple[str, List[Any]]:
         where += " AND (p.full_name LIKE ? OR n.condition_name LIKE ? OR n.doctor_name LIKE ? OR n.note_text LIKE ? OR r.medication_name LIKE ? OR c.name LIKE ?)"
         term = f"%{f.search}%"
         params.extend([term] * 6)
+    if f.from_date:
+        where += " AND n.visit_date >= ?"
+        params.append(f.from_date)
+    if f.to_date:
+        where += " AND n.visit_date <= ?"
+        params.append(f.to_date)
     return where, params
 
 
@@ -680,6 +733,8 @@ def dashboard_post(
     f.doctor = _norm(f.doctor)
     f.condition = _norm(f.condition)
     f.search = _norm(f.search)
+    f.from_date = _norm(f.from_date)
+    f.to_date = _norm(f.to_date)
     return _dashboard_impl(f, page=page, page_size=page_size)
 
 
@@ -750,19 +805,29 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
     out_rows: List[Dict[str, Any]] = []
     for r in rows:
         try:
-            last_filled = datetime.strptime(r["last_filled_date"], "%Y-%m-%d")
             days_supply = int(r["days_supply"] or 0)
-            days_elapsed = (now - last_filled).days
-            ratio = (days_elapsed / days_supply) if days_supply > 0 else 0.0
 
-            status, action, action_type = "Good", "Monitor", "info"
-            if ratio > 1.2:
-                status, action, action_type = "Non-Adherent", "Call Patient", "danger"
-            elif ratio > 0.9:
-                if int(r["refills_remaining"] or 0) > 0:
-                    status, action, action_type = "Refill Due", "Process Refill", "success"
+            # Handle "Not Purchased" (NULL last_filled_date)
+            if not r["last_filled_date"]:
+                status = "Not Purchased"
+                next_steps = "Did Not Buy"
+                action_type = "danger"
+                refill_due = None
+            else:
+                last_filled = datetime.strptime(r["last_filled_date"], "%Y-%m-%d")
+                days_elapsed = (now - last_filled).days
+                ratio = (days_elapsed / days_supply) if days_supply > 0 else 0.0
+                refill_due = (last_filled + timedelta(days=days_supply)).strftime("%Y-%m-%d")
+
+                if ratio > 1.2:
+                    status, next_steps, action_type = "Non-Adherent", "Call Patient", "danger"
+                elif ratio > 0.9:
+                    if int(r["refills_remaining"] or 0) > 0:
+                        status, next_steps, action_type = "Refill Due", "Call for Refill", "success"
+                    else:
+                        status, next_steps, action_type = "Renewal Needed", "Book Appointment", "warning"
                 else:
-                    status, action, action_type = "Renewal Needed", "Book Appointment", "warning"
+                    status, next_steps, action_type = "Good", "Monitor", "info"
 
             note_text = (r["note_text"] or "")
             note_snippet = note_text[:220] + ("..." if len(note_text) > 220 else "")
@@ -784,7 +849,8 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
                 "has_doctor_notes": bool(doctor_notes_raw.strip()),
                 "last_visit": r["visit_date"],
                 "status": status,
-                "action": action,
+                "next_steps": next_steps,
+                "refill_due_date": refill_due,
                 "refills_left": r["refills_remaining"],
                 "rx_status": r["rx_status"],
                 "last_filled_date": r["last_filled_date"],

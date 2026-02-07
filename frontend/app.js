@@ -1,10 +1,11 @@
 const API_URL = "/api";
 
 // State
-let currentFilters = { clinic: '', doctor: '', condition: '', search: '' };
+let currentFilters = { clinic: '', doctor: '', condition: '', search: '', from_date: '', to_date: '' };
 let currentPage = 1;
 const pageSize = 50;
 const sessionId = crypto.randomUUID();
+let currentRows = [];
 
 // --- UTILITY ---
 function debounce(fn, delay) {
@@ -39,6 +40,18 @@ document.addEventListener('DOMContentLoaded', () => {
         currentPage = 1;
         loadDashboard();
     }, 400));
+
+    // Date range filters
+    document.getElementById('filter-from-date').addEventListener('change', (e) => {
+        currentFilters.from_date = e.target.value;
+        currentPage = 1;
+        loadDashboard();
+    });
+    document.getElementById('filter-to-date').addEventListener('change', (e) => {
+        currentFilters.to_date = e.target.value;
+        currentPage = 1;
+        loadDashboard();
+    });
 
     document.getElementById('query-form').addEventListener('submit', handleQuerySubmit);
 });
@@ -87,30 +100,73 @@ function resetFilters() {
     document.getElementById('filter-doctor').value = "";
     document.getElementById('filter-condition').value = "";
     document.getElementById('filter-search').value = "";
-    currentFilters = { clinic: '', doctor: '', condition: '', search: '' };
+    document.getElementById('filter-from-date').value = "";
+    document.getElementById('filter-to-date').value = "";
+    currentFilters = { clinic: '', doctor: '', condition: '', search: '', from_date: '', to_date: '' };
     currentPage = 1;
     loadDashboard();
 }
 
 function updatePagination(pagination) {
     const info = document.getElementById('page-info');
-    const btnPrev = document.getElementById('btn-prev');
-    const btnNext = document.getElementById('btn-next');
-    if (!info) return;
+    const container = document.getElementById('pagination-container');
+    if (!info || !container) return;
+
     info.textContent = `Page ${pagination.page} of ${pagination.total_pages} (${pagination.total_rows.toLocaleString()} records)`;
-    btnPrev.disabled = pagination.page <= 1;
-    btnNext.disabled = pagination.page >= pagination.total_pages;
+
+    const { page, total_pages } = pagination;
+    container.innerHTML = '';
+
+    if (total_pages <= 1) return;
+
+    const makeBtn = (label, pageNum, isActive, isDisabled, isIcon) => {
+        const btn = document.createElement('button');
+        btn.className = isActive ? 'pagination-btn pagination-active' : 'pagination-btn';
+        if (isIcon) btn.innerHTML = label;
+        else btn.textContent = label;
+        btn.disabled = isDisabled;
+        if (!isDisabled && !isActive) btn.onclick = () => goToPage(pageNum);
+        return btn;
+    };
+
+    const makeEllipsis = () => {
+        const span = document.createElement('span');
+        span.className = 'px-2 text-slate-400 text-sm select-none';
+        span.textContent = '...';
+        return span;
+    };
+
+    container.appendChild(makeBtn('<i class="fa-solid fa-angles-left text-xs"></i>', 1, false, page === 1, true));
+    container.appendChild(makeBtn('<i class="fa-solid fa-chevron-left text-xs"></i>', page - 1, false, page === 1, true));
+
+    let pages = [];
+    if (total_pages <= 7) {
+        for (let i = 1; i <= total_pages; i++) pages.push(i);
+    } else if (page <= 4) {
+        pages = [1, 2, 3, 4, 5, -1, total_pages];
+    } else if (page >= total_pages - 3) {
+        pages = [1, -1, total_pages - 4, total_pages - 3, total_pages - 2, total_pages - 1, total_pages];
+    } else {
+        pages = [1, -1, page - 1, page, page + 1, -1, total_pages];
+    }
+
+    pages.forEach(p => {
+        if (p === -1) container.appendChild(makeEllipsis());
+        else container.appendChild(makeBtn(String(p), p, p === page, false, false));
+    });
+
+    container.appendChild(makeBtn('<i class="fa-solid fa-chevron-right text-xs"></i>', page + 1, false, page === total_pages, true));
+    container.appendChild(makeBtn('<i class="fa-solid fa-angles-right text-xs"></i>', total_pages, false, page === total_pages, true));
 }
 
-function changePage(delta) {
-    currentPage += delta;
-    if (currentPage < 1) currentPage = 1;
+function goToPage(pageNum) {
+    currentPage = pageNum;
     loadDashboard();
 }
 
 async function loadDashboard() {
     const tbody = document.getElementById('patient-table-body');
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-slate-400">
+    tbody.innerHTML = `<tr><td colspan="11" class="text-center py-12 text-slate-400">
         <i class="fa-solid fa-spinner fa-spin mr-2"></i> Loading data...
     </td></tr>`;
 
@@ -130,160 +186,221 @@ async function loadDashboard() {
         if (pagination) updatePagination(pagination);
     } catch (e) {
         console.error(e);
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-red-500">
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center py-12 text-red-500">
             <i class="fa-solid fa-triangle-exclamation mr-2"></i> Error connecting to server
         </td></tr>`;
     }
 }
 
+function getStatusClass(status) {
+    const map = {
+        'Good': 'status-badge good',
+        'Refill Due': 'status-badge refill',
+        'Renewal Needed': 'status-badge renewal',
+        'Non-Adherent': 'status-badge risk',
+        'Not Purchased': 'status-badge not-purchased'
+    };
+    return map[status] || 'status-badge';
+}
+
+function getNextStepsClass(steps) {
+    const map = {
+        'Monitor': 'next-steps-badge monitor',
+        'Call for Refill': 'next-steps-badge call-refill',
+        'Book Appointment': 'next-steps-badge book-appt',
+        'Call Patient': 'next-steps-badge call-patient',
+        'Did Not Buy': 'next-steps-badge did-not-buy'
+    };
+    return map[steps] || 'next-steps-badge monitor';
+}
+
 function renderTable(data) {
     const tbody = document.getElementById('patient-table-body');
     const recordCount = document.getElementById('record-count');
+    currentRows = data;
     recordCount.textContent = `${data.length} records`;
     tbody.innerHTML = '';
 
     if (data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-slate-400">No records found</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center py-12 text-slate-400">No records found</td></tr>`;
         return;
     }
 
-    const statusClasses = {
-        'Good': 'status-badge good',
-        'Refill Due': 'status-badge refill',
-        'Renewal Needed': 'status-badge renewal',
-        'Non-Adherent': 'status-badge risk'
-    };
-
     data.forEach((row, index) => {
         const tr = document.createElement('tr');
-        tr.className = "cursor-pointer";
-        const rowId = `detail-${index}`;
+        tr.className = "transition-colors";
 
         tr.innerHTML = `
-            <td class="px-6 py-4">
+            <td class="px-3 py-2.5">
                 <div class="font-medium text-slate-800">${escapeHtml(row.name)}</div>
-                <div class="text-xs text-slate-400 mt-0.5">${escapeHtml(row.clinic)}</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(row.clinic)}</div>
             </td>
-            <td class="px-6 py-4">
-                <div class="text-slate-700">${escapeHtml(row.medication)}</div>
-                <div class="text-xs text-slate-400 mt-0.5">${escapeHtml(row.dosage)} &bull; ${row.refills_left} refills left</div>
+            <td class="px-3 py-2.5 text-slate-700">${escapeHtml(row.doctor)}</td>
+            <td class="px-3 py-2.5 text-slate-700">${escapeHtml(row.condition)}</td>
+            <td class="px-3 py-2.5 text-slate-700">${escapeHtml(row.medication)}</td>
+            <td class="px-3 py-2.5 text-slate-500">${escapeHtml(row.dosage)}</td>
+            <td class="px-3 py-2.5 text-slate-500 whitespace-nowrap">${row.last_visit || 'N/A'}</td>
+            <td class="px-3 py-2.5 text-slate-500 whitespace-nowrap">${row.last_filled_date || 'N/A'}</td>
+            <td class="px-3 py-2.5 text-slate-500 whitespace-nowrap">${row.refill_due_date || 'N/A'}</td>
+            <td class="px-3 py-2.5">
+                <span class="${getStatusClass(row.status)}">${escapeHtml(row.status)}</span>
             </td>
-            <td class="px-6 py-4">
-                <span class="${statusClasses[row.status] || 'status-badge'}">${escapeHtml(row.status)}</span>
+            <td class="px-3 py-2.5">
+                <span class="${getNextStepsClass(row.next_steps)}">${escapeHtml(row.next_steps)}</span>
             </td>
-            <td class="px-6 py-4">
-                <span class="text-xs font-medium text-teal-700 bg-teal-50 px-3 py-1.5 rounded-lg">${escapeHtml(row.action)}</span>
-            </td>
-            <td class="px-6 py-4 text-right">
-                <button onclick="event.stopPropagation(); toggleDetails('${rowId}')" class="text-slate-400 hover:text-teal-600 transition-colors p-2">
-                    <i class="fa-solid fa-chevron-down text-xs"></i>
+            <td class="px-3 py-2.5 text-center">
+                <button onclick="event.stopPropagation(); openViewModal(${index})" class="view-btn">
+                    <i class="fa-solid fa-eye text-[10px]"></i> View
                 </button>
             </td>
         `;
 
-        tr.onclick = () => toggleDetails(rowId);
-
-        const detailTr = document.createElement('tr');
-        detailTr.id = rowId;
-        detailTr.className = "hidden";
-
-        // Build doctor notes section for expanded view
-        let doctorNotesHtml = '';
-        if (row.has_doctor_notes && row.doctor_notes_snippet) {
-            const soapHtml = parseSOAPToHTML(row.doctor_notes_snippet);
-            doctorNotesHtml = `
-                <div class="mt-4">
-                    <h4 class="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <i class="fa-solid fa-file-medical"></i> Doctor Notes
-                        <span class="soap-badge"><i class="fa-solid fa-check text-[8px]"></i> SOAP</span>
-                    </h4>
-                    <div class="soap-container text-sm">${soapHtml}</div>
-                </div>
-                ${row.note_id ? `<button onclick="event.stopPropagation(); openNoteModal(${row.note_id})"
-                    class="mt-3 text-xs text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1 transition-colors">
-                    <i class="fa-solid fa-expand"></i> View Full Note
-                </button>` : ''}
-            `;
-        }
-
-        detailTr.innerHTML = `
-            <td colspan="5" class="px-6 py-4 bg-slate-50 border-t border-slate-100">
-                <div class="grid grid-cols-3 gap-6">
-                    <div class="col-span-2">
-                        <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                            <i class="fa-solid fa-notes-medical mr-1"></i> Clinical Note
-                        </h4>
-                        <div class="bg-white p-4 rounded-lg border border-slate-200 text-sm text-slate-600 italic">
-                            "${escapeHtml(row.note_snippet)}"
-                        </div>
-                        ${doctorNotesHtml}
-                    </div>
-                    <div class="space-y-4">
-                        <div>
-                            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Prescriber</h4>
-                            <p class="text-sm font-medium text-slate-800">${escapeHtml(row.doctor)}</p>
-                        </div>
-                        <div>
-                            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Condition</h4>
-                            <p class="text-sm font-medium text-slate-800">${escapeHtml(row.condition)}</p>
-                        </div>
-                        <div>
-                            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Last Visit</h4>
-                            <p class="text-sm font-medium text-slate-800">${row.last_visit || 'N/A'}</p>
-                        </div>
-                    </div>
-                </div>
-            </td>
-        `;
-
         tbody.appendChild(tr);
-        tbody.appendChild(detailTr);
     });
 }
 
-function toggleDetails(id) {
-    const el = document.getElementById(id);
-    const isHidden = el.classList.contains('hidden');
-    document.querySelectorAll('tr[id^="detail-"]').forEach(row => row.classList.add('hidden'));
-    if (isHidden) el.classList.remove('hidden');
+function openViewModal(index) {
+    const row = currentRows[index];
+    if (!row) return;
+
+    const modalContainer = document.getElementById('note-modal');
+
+    let doctorNotesSection = '';
+    if (row.has_doctor_notes && row.doctor_notes_snippet) {
+        const soapHtml = parseSOAPToHTML(row.doctor_notes_snippet);
+        doctorNotesSection = `
+            <hr class="border-slate-100">
+            <div>
+                <h4 class="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <i class="fa-solid fa-file-medical"></i> Doctor Notes
+                    <span class="soap-badge"><i class="fa-solid fa-check text-[8px]"></i> SOAP</span>
+                </h4>
+                <div class="soap-container text-sm">${soapHtml}</div>
+            </div>
+            ${row.note_id ? `<button onclick="event.stopPropagation(); closeNoteModal(); openNoteModal(${row.note_id})"
+                class="mt-3 text-xs text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1 transition-colors">
+                <i class="fa-solid fa-expand"></i> View Full Note
+            </button>` : ''}
+        `;
+    }
+
+    modalContainer.innerHTML = `
+        <div class="modal-backdrop" onclick="closeNoteModal(event)">
+            <div class="modal-content" style="max-width: 560px;" onclick="event.stopPropagation()">
+                <div class="p-5 border-b border-slate-100 bg-slate-50">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-800">${escapeHtml(row.name)}</h3>
+                            <div class="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                                <span><i class="fa-solid fa-hospital mr-1"></i>${escapeHtml(row.clinic)}</span>
+                                <span><i class="fa-solid fa-user-doctor mr-1"></i>${escapeHtml(row.doctor)}</span>
+                            </div>
+                        </div>
+                        <button onclick="closeNoteModal()" class="text-slate-400 hover:text-slate-600 transition-colors p-1">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-5 space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <p class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">Condition</p>
+                            <p class="text-sm font-medium text-slate-800">${escapeHtml(row.condition)}</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">Visit Date</p>
+                            <p class="text-sm font-medium text-slate-800">${row.last_visit || 'N/A'}</p>
+                        </div>
+                    </div>
+
+                    <hr class="border-slate-100">
+
+                    <div>
+                        <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                            <i class="fa-solid fa-prescription mr-1"></i> Prescription Details
+                        </h4>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p class="text-[10px] text-slate-400">Medication</p>
+                                <p class="font-medium text-slate-800">${escapeHtml(row.medication)}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-slate-400">Dosage</p>
+                                <p class="font-medium text-slate-800">${escapeHtml(row.dosage)}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-slate-400">Days Supply</p>
+                                <p class="font-medium text-slate-800">${row.days_supply || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-slate-400">Refills Remaining</p>
+                                <p class="font-medium text-slate-800">${row.refills_left}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-slate-400">Last Filled</p>
+                                <p class="font-medium text-slate-800">${row.last_filled_date || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-slate-400">Rx Status</p>
+                                <p class="font-medium text-slate-800">${escapeHtml(row.rx_status || 'N/A')}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-slate-400">Refill Due Date</p>
+                                <p class="font-medium text-slate-800">${row.refill_due_date || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] text-slate-400">Next Steps</p>
+                                <p class="mt-0.5"><span class="${getNextStepsClass(row.next_steps)}">${escapeHtml(row.next_steps)}</span></p>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <span class="${getStatusClass(row.status)}">${escapeHtml(row.status)}</span>
+                        </div>
+                    </div>
+
+                    ${doctorNotesSection}
+                </div>
+            </div>
+        </div>
+    `;
+    modalContainer.classList.remove('hidden');
 }
 
 // --- KPI: Use backend kpis when available ---
 function updateMetrics(data, kpis) {
-    let risk = 0, due = 0, active = 0, lost = 0;
+    let risk = 0, due = 0, active = 0, lost = 0, notPurchased = 0;
+
+    data.forEach(r => {
+        if (r.status === 'Non-Adherent') risk++;
+        else if (r.status === 'Refill Due') due++;
+        else if (r.status === 'Good') active++;
+        else if (r.status === 'Renewal Needed') lost++;
+        else if (r.status === 'Not Purchased') notPurchased++;
+    });
 
     if (kpis) {
         const totalRx = kpis.total_rows || 0;
+        const uniquePatients = kpis.unique_patients || 0;
         const activeRx = kpis.active_rx || 0;
         const expiredRx = kpis.expired_rx || 0;
 
-        data.forEach(r => {
-            if (r.status === 'Non-Adherent') risk++;
-            else if (r.status === 'Refill Due') due++;
-            else if (r.status === 'Good') active++;
-            else if (r.status === 'Renewal Needed') lost++;
-        });
-
-        animateValue("total-rx", 0, totalRx, 500);
-        animateValue("count-risk", 0, expiredRx, 500);
-        animateValue("count-due", 0, totalRx - activeRx - expiredRx, 500);
-        animateValue("count-active", 0, activeRx, 500);
+        animateValue("total-rx", 0, totalRx, 400);
+        animateValue("total-patients", 0, uniquePatients, 400);
+        animateValue("count-risk", 0, expiredRx, 400);
+        animateValue("count-due", 0, totalRx - activeRx - expiredRx, 400);
+        animateValue("count-active", 0, activeRx, 400);
     } else {
-        data.forEach(r => {
-            if (r.status === 'Non-Adherent') risk++;
-            else if (r.status === 'Refill Due') due++;
-            else if (r.status === 'Good') active++;
-            else if (r.status === 'Renewal Needed') lost++;
-        });
-
-        animateValue("total-rx", 0, data.length, 500);
-        animateValue("count-risk", 0, risk + lost, 500);
-        animateValue("count-due", 0, due, 500);
-        animateValue("count-active", 0, active, 500);
+        const distinctPatients = new Set(data.map(r => r.patient_id)).size;
+        animateValue("total-rx", 0, data.length, 400);
+        animateValue("total-patients", 0, distinctPatients, 400);
+        animateValue("count-risk", 0, risk + lost + notPurchased, 400);
+        animateValue("count-due", 0, due, 400);
+        animateValue("count-active", 0, active, 400);
     }
 
     const total = data.length || 1;
-    const totalRisk = risk + lost;
+    const totalRisk = risk + lost + notPurchased;
 
     document.getElementById('legend-risk').textContent = totalRisk;
     document.getElementById('legend-due').textContent = due;
@@ -303,7 +420,7 @@ function updateMetrics(data, kpis) {
     document.getElementById('fulfill-bar').style.width = `${fulfillPct}%`;
 
     const secured = (active + due) * 45;
-    const lostRev = (risk + lost) * 45;
+    const lostRev = (risk + lost + notPurchased) * 45;
     const maxRev = Math.max(secured, lostRev, 1);
 
     document.getElementById('bar-secured').style.height = `${(secured / maxRev) * 100}%`;
@@ -509,17 +626,55 @@ document.addEventListener('keydown', (e) => {
 // QUERY / AI CHAT
 // =========================================
 function fillQuery(text) {
-    switchTab('query');
-    document.getElementById('query-input').value = text;
-    document.getElementById('query-input').focus();
+    const input = document.getElementById('query-input');
+    input.value = text;
+    input.focus();
 }
 
 function clearChat() {
     const history = document.getElementById('chat-history');
     history.innerHTML = `
-        <div class="chat-message ai">
-            <div class="message-content">
-                <p>Chat cleared. How can I help you?</p>
+        <div id="nb-welcome" class="nb-welcome">
+            <div class="nb-welcome-icon">
+                <i class="fa-solid fa-heart-pulse text-teal-600 text-3xl"></i>
+            </div>
+            <h2 class="text-xl font-bold text-slate-800 mt-4">Ask MediGraph</h2>
+            <p class="text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+                Ask questions about patients, prescriptions, clinical notes, or medical knowledge.
+                Everything runs locally — your data never leaves this machine.
+            </p>
+            <div class="nb-suggestions">
+                <button onclick="fillQuery('How many active prescriptions are there?')" class="nb-suggestion-chip">
+                    <i class="fa-solid fa-database text-blue-500 text-[10px]"></i>
+                    How many active prescriptions?
+                </button>
+                <button onclick="fillQuery('What symptoms are described for diabetic patients?')" class="nb-suggestion-chip">
+                    <i class="fa-solid fa-book-open text-purple-500 text-[10px]"></i>
+                    Symptoms for diabetic patients?
+                </button>
+                <button onclick="fillQuery('Which clinic has the most diabetes patients? Who are the doctors there?')" class="nb-suggestion-chip">
+                    <i class="fa-solid fa-code-merge text-amber-500 text-[10px]"></i>
+                    Top diabetes clinic & doctors?
+                </button>
+                <button onclick="fillQuery('What is the root cause of hypertension? How many patients have it?')" class="nb-suggestion-chip">
+                    <i class="fa-solid fa-sitemap text-emerald-500 text-[10px]"></i>
+                    Causes & count of hypertension?
+                </button>
+                <button onclick="fillQuery('List all patients with non-adherent prescriptions')" class="nb-suggestion-chip">
+                    <i class="fa-solid fa-triangle-exclamation text-red-400 text-[10px]"></i>
+                    Non-adherent prescriptions?
+                </button>
+                <button onclick="fillQuery('What medications are commonly prescribed for asthma?')" class="nb-suggestion-chip">
+                    <i class="fa-solid fa-pills text-teal-500 text-[10px]"></i>
+                    Medications for asthma?
+                </button>
+            </div>
+            <div class="flex items-center justify-center gap-4 mt-6 text-[11px] text-slate-400">
+                <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield-check text-emerald-400"></i> HIPAA Compliant</span>
+                <span class="text-slate-300">&middot;</span>
+                <span class="flex items-center gap-1.5"><i class="fa-solid fa-server text-slate-400"></i> Local Processing</span>
+                <span class="text-slate-300">&middot;</span>
+                <span class="flex items-center gap-1.5"><i class="fa-solid fa-brain text-teal-400"></i> RAG + SQL</span>
             </div>
         </div>
     `;
@@ -611,10 +766,15 @@ function renderSources(sources) {
     `;
 }
 
+function hideWelcome() {
+    const welcome = document.getElementById('nb-welcome');
+    if (welcome) welcome.remove();
+}
+
 function addAIMessage(data) {
     const history = document.getElementById('chat-history');
     const div = document.createElement('div');
-    div.className = "chat-message ai";
+    div.className = "nb-msg nb-msg-ai";
 
     const badge = getQueryTypeBadge(data.query_type);
     const confidence = getConfidenceMeter(data.confidence);
@@ -642,7 +802,10 @@ function addAIMessage(data) {
     }
 
     div.innerHTML = `
-        <div class="message-content">
+        <div class="nb-ai-avatar-sm">
+            <i class="fa-solid fa-sparkles text-white text-[10px]"></i>
+        </div>
+        <div class="nb-bubble" style="max-width: 85%;">
             <div class="flex items-center gap-2 mb-3">
                 ${badge}
                 ${data.hybrid_mode ? `<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full uppercase font-medium">${escapeHtml(data.hybrid_mode)}</span>` : ''}
@@ -652,8 +815,8 @@ function addAIMessage(data) {
             <div class="prose prose-sm max-w-none prose-slate prose-headings:text-slate-800 prose-headings:font-semibold prose-p:text-slate-700 prose-strong:text-slate-800 prose-ul:text-slate-700 prose-ol:text-slate-700 prose-li:marker:text-teal-500">${marked.parse(answer || '')}</div>
             ${sources}
             ${confidence}
+            <div class="nb-timestamp">${timestamp}</div>
         </div>
-        <div class="message-timestamp">${timestamp}</div>
     `;
 
     history.appendChild(div);
@@ -661,20 +824,30 @@ function addAIMessage(data) {
 }
 
 function addMessage(type, content) {
+    hideWelcome();
     const history = document.getElementById('chat-history');
     const div = document.createElement('div');
-    div.className = `chat-message ${type}`;
     const timestamp = formatTimestamp();
 
     if (type === 'user') {
+        div.className = 'nb-msg nb-msg-user';
         div.innerHTML = `
-            <div class="message-content">${escapeHtml(content)}</div>
-            <div class="message-timestamp">${timestamp}</div>
+            <div class="nb-user-avatar">You</div>
+            <div>
+                <div class="nb-bubble">${escapeHtml(content)}</div>
+                <div class="nb-timestamp" style="text-align: right;">${timestamp}</div>
+            </div>
         `;
     } else if (type === 'error') {
-        div.innerHTML = `<div class="message-content bg-red-50 border-red-200 text-red-600">
-            <i class="fa-solid fa-triangle-exclamation mr-2"></i>${escapeHtml(content)}
-        </div>`;
+        div.className = 'nb-msg nb-msg-ai';
+        div.innerHTML = `
+            <div class="nb-ai-avatar-sm">
+                <i class="fa-solid fa-sparkles text-white text-[10px]"></i>
+            </div>
+            <div class="nb-bubble" style="background: #fef2f2; border-color: #fecaca; color: #dc2626;">
+                <i class="fa-solid fa-triangle-exclamation mr-2"></i>${escapeHtml(content)}
+            </div>
+        `;
     }
 
     history.appendChild(div);
