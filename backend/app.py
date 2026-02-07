@@ -610,6 +610,33 @@ def security_check(req: SecurityTestRequest):
     return result.to_dict()
 
 
+@app.get("/api/rag/metrics")
+def rag_metrics_summary():
+    """
+    Get aggregated RAG pipeline metrics.
+
+    Returns statistics over recent requests including:
+    - Quality metrics (relevance, utilization, faithfulness)
+    - Precision metrics (P@K, MRR)
+    - Latency breakdown by pipeline stage
+    - Health status
+    """
+    from backend.rag.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    return collector.get_summary()
+
+
+@app.get("/api/rag/metrics/{run_id}")
+def rag_metrics_by_run(run_id: str):
+    """Get detailed RAG metrics for a specific request."""
+    from backend.rag.metrics import get_metrics_collector
+    collector = get_metrics_collector()
+    metrics = collector.get_by_run_id(run_id)
+    if metrics is None:
+        raise HTTPException(404, f"No metrics found for run_id: {run_id}")
+    return metrics.to_dict()
+
+
 @app.get("/api/filters")
 def filters():
     conn = sqlite3.connect(DB_PATH)
