@@ -4,11 +4,26 @@ A production-grade **Medical Chatbot** combining **RAG (Retrieval-Augmented Gene
 
 > **Why this matters**: Healthcare data is sensitive. This system ensures no patient data ever leaves your infrastructure while providing powerful AI-driven insights.
 
+## Dataset
+
+This platform includes a **realistic synthetic medical dataset** generated using LLM:
+
+| Metric | Value |
+|--------|-------|
+| Patients | 65,375 |
+| Prescriptions | 116,101 (avg 1.78/patient) |
+| Clinical Notes | 65,375 (SOAP format) |
+| Medical Conditions | 20 diverse conditions |
+| Clinics | 50 facilities |
+
+See [DATA_GENERATION.md](DATA_GENERATION.md) for full documentation on how the dataset is created and regenerated.
+
 ---
 
 ## Table of Contents
 
 - [Key Features](#key-features)
+- [Dataset](#dataset)
 - [System Architecture](#system-architecture)
 - [Component Deep Dive](#component-deep-dive)
 - [RAG Pipeline Explained](#rag-pipeline-explained)
@@ -18,6 +33,7 @@ A production-grade **Medical Chatbot** combining **RAG (Retrieval-Augmented Gene
 - [Getting Started](#getting-started)
 - [API Reference](#api-reference)
 - [Project Structure](#project-structure)
+- [Data Generation](./DATA_GENERATION.md)
 
 ---
 
