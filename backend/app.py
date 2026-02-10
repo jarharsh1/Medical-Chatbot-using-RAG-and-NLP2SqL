@@ -758,15 +758,15 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
 
     where_sql, params = _build_where_and_params(f)
 
-    # KPI queries (FULL dataset)
-    total_sql = f"SELECT COUNT(*) as cnt {base_from} {where_sql}"
+    # KPI queries (FULL dataset) - use DISTINCT to avoid duplicate counts from joins
+    total_sql = f"SELECT COUNT(DISTINCT r.rx_id) as cnt {base_from} {where_sql}"
     total_rows = int(cur.execute(total_sql, params).fetchone()["cnt"])
 
     uniq_pat_sql = f"SELECT COUNT(DISTINCT p.patient_id) as cnt {base_from} {where_sql}"
     unique_patients = int(cur.execute(uniq_pat_sql, params).fetchone()["cnt"])
 
     rx_status_sql = f"""
-        SELECT r.status as status, COUNT(*) as cnt
+        SELECT r.status as status, COUNT(DISTINCT r.rx_id) as cnt
         {base_from}
         {where_sql}
         GROUP BY r.status
@@ -786,7 +786,7 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
     dn_col = ", n.doctor_notes" if has_doctor_notes else ""
 
     page_sql = f"""
-        SELECT p.patient_id, p.full_name, c.name as clinic_name,
+        SELECT p.patient_id, r.rx_id, p.full_name, c.name as clinic_name,
                n.doctor_name, n.condition_name, n.note_text, n.visit_date,
                n.note_id,
                r.medication_name, r.dosage, r.days_supply, r.refills_remaining,
@@ -837,6 +837,7 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
 
             out_rows.append({
                 "patient_id": r["patient_id"],
+                "rx_id": r["rx_id"],
                 "note_id": r["note_id"],
                 "name": r["full_name"],
                 "clinic": r["clinic_name"],

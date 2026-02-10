@@ -367,66 +367,73 @@ function openViewModal(index) {
     modalContainer.classList.remove('hidden');
 }
 
-// --- KPI: Use backend kpis when available ---
+// --- KPI: Use backend kpis when available (always use distinct counts) ---
 function updateMetrics(data, kpis) {
-    let risk = 0, due = 0, active = 0, lost = 0, notPurchased = 0;
-
-    data.forEach(r => {
-        if (r.status === 'Non-Adherent') risk++;
-        else if (r.status === 'Refill Due') due++;
-        else if (r.status === 'Good') active++;
-        else if (r.status === 'Renewal Needed') lost++;
-        else if (r.status === 'Not Purchased') notPurchased++;
-    });
+    let totalRx = 0, uniquePatients = 0, riskRx = 0, dueRx = 0, activeRx = 0;
 
     if (kpis) {
-        const totalRx = kpis.total_rows || 0;
-        const uniquePatients = kpis.unique_patients || 0;
-        const activeRx = kpis.active_rx || 0;
+        // Use backend-calculated distinct counts
+        totalRx = kpis.total_rows || 0;
+        uniquePatients = kpis.unique_patients || 0;
+        activeRx = kpis.active_rx || 0;
         const expiredRx = kpis.expired_rx || 0;
-
-        animateValue("total-rx", 0, totalRx, 400);
-        animateValue("total-patients", 0, uniquePatients, 400);
-        animateValue("count-risk", 0, expiredRx, 400);
-        animateValue("count-due", 0, totalRx - activeRx - expiredRx, 400);
-        animateValue("count-active", 0, activeRx, 400);
+        riskRx = expiredRx;
+        dueRx = totalRx - activeRx - expiredRx;
     } else {
-        const distinctPatients = new Set(data.map(r => r.patient_id)).size;
-        animateValue("total-rx", 0, data.length, 400);
-        animateValue("total-patients", 0, distinctPatients, 400);
-        animateValue("count-risk", 0, risk + lost + notPurchased, 400);
-        animateValue("count-due", 0, due, 400);
-        animateValue("count-active", 0, active, 400);
+        // Calculate distinct counts from page data as fallback
+        uniquePatients = new Set(data.map(r => r.patient_id)).size;
+        totalRx = new Set(data.map(r => r.rx_id || r.patient_id + '_' + r.medication + '_' + r.dosage)).size;
+        
+        // Count distinct prescriptions per status
+        const statusCounts = {};
+        data.forEach(r => {
+            const status = r.status;
+            const key = r.rx_id || r.patient_id + '_' + r.medication + '_' + r.dosage;
+            if (!statusCounts[status]) statusCounts[status] = new Set();
+            statusCounts[status].add(key);
+        });
+        
+        riskRx = (statusCounts['Non-Adherent'] || new Set()).size + 
+                 (statusCounts['Renewal Needed'] || new Set()).size + 
+                 (statusCounts['Not Purchased'] || new Set()).size;
+        dueRx = (statusCounts['Refill Due'] || new Set()).size;
+        activeRx = (statusCounts['Good'] || new Set()).size;
     }
 
-    const total = data.length || 1;
-    const totalRisk = risk + lost + notPurchased;
+    // Update KPI cards with distinct counts
+    animateValue("total-rx", 0, totalRx, 400);
+    animateValue("total-patients", 0, uniquePatients, 400);
+    animateValue("count-risk", 0, riskRx, 400);
+    animateValue("count-due", 0, dueRx, 400);
+    animateValue("count-active", 0, activeRx, 400);
 
-    document.getElementById('legend-risk').textContent = totalRisk;
-    document.getElementById('legend-due').textContent = due;
-    document.getElementById('legend-active').textContent = active;
-    document.getElementById('donut-total').textContent = data.length;
+    // Update legend and donut chart with distinct counts
+    document.getElementById('legend-risk').textContent = riskRx;
+    document.getElementById('legend-due').textContent = dueRx;
+    document.getElementById('legend-active').textContent = activeRx;
+    document.getElementById('donut-total').textContent = totalRx;
 
-    const riskPct = (totalRisk / total) * 100;
-    const duePct = (due / total) * 100;
+    const total = totalRx || 1;
+    const riskPct = (riskRx / total) * 100;
+    const duePct = (dueRx / total) * 100;
     const donut = document.getElementById('donut-chart');
 
-    donut.style.background = data.length === 0
+    donut.style.background = totalRx === 0
         ? `conic-gradient(#e2e8f0 0% 100%)`
         : `conic-gradient(#ef4444 0% ${riskPct}%, #f59e0b ${riskPct}% ${riskPct + duePct}%, #10b981 ${riskPct + duePct}% 100%)`;
 
-    const fulfillPct = Math.round((active / total) * 100);
+    const fulfillPct = Math.round((activeRx / total) * 100);
     document.getElementById('fulfill-rate').textContent = `${fulfillPct}%`;
     document.getElementById('fulfill-bar').style.width = `${fulfillPct}%`;
 
-    const secured = (active + due) * 45;
-    const lostRev = (risk + lost + notPurchased) * 45;
+    const secured = (activeRx + dueRx) * 45;
+    const lostRev = riskRx * 45;
     const maxRev = Math.max(secured, lostRev, 1);
 
     document.getElementById('bar-secured').style.height = `${(secured / maxRev) * 100}%`;
     document.getElementById('bar-lost').style.height = `${(lostRev / maxRev) * 100}%`;
-    document.getElementById('rev-secured').textContent = `$${secured.toLocaleString()}`;
-    document.getElementById('rev-lost').textContent = `$${lostRev.toLocaleString()}`;
+    document.getElementById('rev-secured').textContent = `${secured.toLocaleString()}`;
+    document.getElementById('rev-lost').textContent = `${lostRev.toLocaleString()}`;
 }
 
 function animateValue(id, start, end, duration) {
