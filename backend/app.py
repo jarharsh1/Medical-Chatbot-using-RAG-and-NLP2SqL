@@ -82,6 +82,7 @@ def init_db():
             diagnosis_code TEXT,
             condition_name TEXT,
             note_text TEXT,
+            doctor_notes TEXT,
             FOREIGN KEY(patient_id) REFERENCES patients(patient_id)
         )
     """)
@@ -92,6 +93,8 @@ def init_db():
             patient_id INTEGER,
             medication_name TEXT,
             dosage TEXT,
+            form TEXT,
+            drug_class TEXT,
             days_supply INTEGER,
             refills_remaining INTEGER,
             last_filled_date TEXT,
@@ -175,6 +178,20 @@ def _load_csv_to_table(conn: sqlite3.Connection, filename: str, table_name: str)
         rows = list(reader)
         if not rows:
             return
+        
+        # Check existing table columns
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        existing_cols = [col[1] for col in cursor.fetchall()]
+        
+        # If table has different columns, add missing ones
+        for col in headers:
+            if col not in existing_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} TEXT")
+                    logger.info(f"Added column {col} to {table_name}")
+                except:
+                    pass
+        
         placeholders = ",".join(["?"] * len(headers))
         sql = f"INSERT INTO {table_name} VALUES ({placeholders})"
         cursor.executemany(sql, rows)

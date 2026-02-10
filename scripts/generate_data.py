@@ -2,20 +2,15 @@ import os
 import csv
 import random
 import json
-import time
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import List, Dict
 from faker import Faker
 from tqdm import tqdm
-
-# Updated Import to fix deprecation warning
 from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage
 
-# --- LOGGING SETUP ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -23,8 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURATION ---
-NUM_PATIENTS = 35000  # Will generate ~105,000 total rows
+NUM_PATIENTS = 35000
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 OS_SEED = 42
@@ -33,283 +27,270 @@ fake = Faker()
 Faker.seed(OS_SEED)
 random.seed(OS_SEED)
 
-# --- PYDANTIC MODELS (Schema Definition) ---
+today = datetime.now()
 
-class Clinic(BaseModel):
-    clinic_id: int = Field(..., description="Unique identifier for the clinic.")
-    name: str = Field(..., description="The name of the medical facility.")
-    location: str = Field(..., description="The physical city or region location.")
+# --- CACHING FOR LLM-GENERATED CONTENT ---
 
-class Patient(BaseModel):
-    patient_id: int = Field(..., description="Unique identifier for the patient.")
-    full_name: str = Field(..., description="The full legal name of the patient.")
-    dob: str = Field(..., description="Date of birth in YYYY-MM-DD format.")
-    gender: str = Field(..., description="Gender of the patient.")
-    insurance_provider: str = Field(..., description="Insurance company.")
-    clinic_id: int = Field(..., description="Foreign key referencing the primary clinic.")
+def load_cached_conditions() -> List[Dict]:
+    """Load cached medical conditions or generate new ones using LLM."""
+    cache_file = os.path.join(DATA_DIR, "medical_conditions_cache.json")
+    
+    if os.path.exists(cache_file):
+        logger.info("Loading cached medical conditions...")
+        with open(cache_file, 'r') as f:
+            return json.load(f)
+    
+    logger.info("Generating medical conditions using LLM...")
+    conditions = generate_medical_conditions_llm()
+    
+    # Cache for future use
+    with open(cache_file, 'w') as f:
+        json.dump(conditions, f, indent=2)
+    logger.info(f"Cached {len(conditions)} conditions to {cache_file}")
+    
+    return conditions
 
-class ClinicalNote(BaseModel):
-    note_id: int = Field(..., description="Unique identifier for the clinical note.")
-    patient_id: int = Field(..., description="Foreign key referencing the patient.")
-    visit_date: str = Field(..., description="Date of visit YYYY-MM-DD.")
-    doctor_name: str = Field(..., description="Name of the physician.")
-    diagnosis_code: str = Field(..., description="ICD-10 code.")
-    condition_name: str = Field(..., description="Name of the medical condition.")
-    note_text: str = Field(..., description="Unstructured clinical text.")
 
-class Prescription(BaseModel):
-    rx_id: int = Field(..., description="Unique identifier for the prescription.")
-    patient_id: int = Field(..., description="Foreign key referencing the patient.")
-    medication_name: str = Field(..., description="Name of the prescribed drug.")
-    dosage: str = Field(..., description="Dosage instructions.")
-    days_supply: int = Field(..., description="Days supply.")
-    refills_remaining: int = Field(..., description="Refills remaining.")
-    last_filled_date: str = Field(..., description="Date last filled YYYY-MM-DD.")
-    status: str = Field(..., description="Status (Active/Expired).")
+def generate_medical_conditions_llm() -> List[Dict]:
+    """Generate realistic medical conditions with medications and templates using LLM."""
+    
+    prompt = """
+Generate 15 diverse medical conditions as a JSON object.
+Each condition needs realistic data for patient records.
 
-# --- OLLAMA SEED GENERATOR ---
-
-class MedicalSeeder:
-    """
-    Uses Ollama to generate realistic medical templates.
-    """
-    def __init__(self):
-        logger.info("Initializing Ollama (llama3.2) for medical context generation...")
-        try:
-            self.llm = ChatOllama(model="llama3.2", temperature=0.8, format="json")
-        except Exception as e:
-            logger.error(f"Error: Ollama initialization failed. {e}")
-            exit(1)
-
-    def generate_medical_knowledge(self) -> List[dict]:
-        logger.info("Asking AI for diverse medical conditions and treatment plans...")
-        
-        prompt = """
-        You are a medical data generator. Generate a JSON object containing a list of exactly 20 distinct medical conditions.
-        
-        You must return a JSON object with this exact structure:
+Return JSON:
+{
+    "conditions": [
         {
-            "conditions": [
-                {
-                    "condition": "Condition Name",
-                    "code": "ICD-10 Code",
-                    "meds": ["Medication Name Dosage", "Medication Name Dosage"],
-                    "templates": ["Clinical note template 1 with {name}", "Clinical note template 2 with {name}"]
-                }
+            "condition_name": "Type 2 Diabetes Mellitus",
+            "icd10_code": "E11.9",
+            "medications": ["Metformin", "Glipizide", "Empagliflozin", "Insulin Glargine", "Glimepiride"],
+            "dosage_forms": ["tablet", "tablet", "tablet", "injection", "tablet"],
+            "dosage_examples": ["500mg", "5mg", "10mg", "20 units", "2mg"],
+            "symptoms": ["increased thirst", "fatigue", "frequent urination", "blurred vision", "slow healing"],
+            "chronic": true,
+            "note_templates": [
+                "Follow-up for diabetes management. HbA1c shows {symptom}. Patient reports {symptom}. Continue current regimen.",
+                "Routine diabetic check. {symptom} noted. Discussed diet and exercise. Scheduled lab work.",
+                "Diabetes review. {symptom} and {symptom}. Medication adjustment considered. Monitor closely."
             ]
         }
+    ]
+}
 
-        Requirements for the data:
-        1. "condition": Real medical condition name (e.g. Type 2 Diabetes, Hypertension, Asthma).
-        2. "code": Valid ICD-10 code.
-        3. "meds": A list of 2 common medications used to treat this condition, including dosages.
-        4. "templates": A list of 3 distinct, realistic clinical note templates. Use {name} as a placeholder for the patient's name.
+Include: Diabetes, Hypertension, Asthma, COPD, Depression, Anxiety, Hyperlipidemia, Hypothyroidism, 
+GERD, Arthritis, Acne, Allergic Rhinitis, Migraine, Anemia, Osteoporosis.
+
+Make it realistic and diverse.
+"""
+    
+    try:
+        llm = ChatOllama(model="qwen2.5:14b", temperature=0.8, format="json")
+        response = llm.invoke([SystemMessage(content=prompt)])
+        content = response.content.strip()
         
-        DO NOT return an empty list. Populate "conditions" with 20 diverse items.
-        """
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].strip()
         
-        try:
-            response = self.llm.invoke([SystemMessage(content=prompt)])
-            content = response.content.strip()
-            
-            # --- Robust JSON Cleanup ---
-            # Llama often wraps JSON in markdown blocks like ```json ... ```
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].strip()
-            
-            data = json.loads(content)
-            conditions = data.get("conditions", [])
-            
-            if not conditions:
-                logger.warning("AI returned valid JSON but empty list. Using fallback.")
-                return self.get_fallback_data()
-                
-            logger.info(f"AI successfully generated {len(conditions)} medical profiles.")
-            return conditions
+        data = json.loads(content)
+        conditions = data.get("conditions", [])
+        
+        if not conditions:
+            raise ValueError("No conditions generated")
+        
+        logger.info(f"LLM generated {len(conditions)} conditions")
+        return conditions
+        
+    except Exception as e:
+        logger.error(f"LLM generation failed: {e}")
+        raise
 
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON Parsing Failed: {e}. Content received: {content[:100]}...")
-            return self.get_fallback_data()
-        except Exception as e:
-            logger.error(f"AI Generation Failed: {e}. Using fallback data.")
-            return self.get_fallback_data()
 
-    def get_fallback_data(self):
-        logger.info("Loading Fallback Medical Data...")
-        return [
-            {
-                "condition": "Hypertension", "code": "I10", 
-                "meds": ["Lisinopril 10mg", "Amlodipine 5mg"],
-                "templates": ["{name} reports persistent headaches. BP 150/95.", "Follow-up for {name}. BP controlled at 130/85.", "Patient {name} advised to reduce sodium intake."]
-            },
-            {
-                "condition": "Type 2 Diabetes", "code": "E11.9",
-                "meds": ["Metformin 500mg", "Glipizide 5mg"],
-                "templates": ["{name} showing signs of insulin resistance.", "Routine diabetic check for {name}. HbA1c 7.2%.", "{name} complains of increased thirst and fatigue."]
-            },
-            {
-                "condition": "Asthma", "code": "J45.909",
-                "meds": ["Albuterol 90mcg", "Fluticasone 110mcg"],
-                "templates": ["{name} reports wheezing after exercise.", "Seasonal allergies triggering asthma for {name}.", "{name} needs refill on rescue inhaler."]
-            },
-            {
-                "condition": "Hyperlipidemia", "code": "E78.5",
-                "meds": ["Atorvastatin 20mg", "Simvastatin 40mg"],
-                "templates": ["Lipid panel shows elevated LDL for {name}.", "{name} advised on low-cholesterol diet.", "Routine follow-up for high cholesterol for {name}."]
-            },
-            {
-                "condition": "Hypothyroidism", "code": "E03.9",
-                "meds": ["Levothyroxine 50mcg", "Levothyroxine 75mcg"],
-                "templates": ["TSH levels elevated for {name}.", "{name} reports fatigue and weight gain.", "Adjusting dosage for {name}."]
-            }
-        ]
+def generate_note_from_template(patient_name: str, condition: Dict, doctor: str, visit_date: str) -> str:
+    """Generate clinical note using templates."""
+    templates = condition.get("note_templates", ["Patient presents for routine visit."])
+    symptoms = condition.get("symptoms", ["general complaints"])
+    
+    template = random.choice(templates)
+    symptom1 = random.choice(symptoms)
+    symptom2 = random.choice([s for s in symptoms if s != symptom1] or symptoms)
+    
+    note = template.replace("{symptom}", symptom1).replace("{symptom2}", symptom2)
+    
+    # Add structured sections
+    return f"""CHIEF COMPLAINT: {patient_name} presents with {symptom1}.
 
-# --- BULK GENERATOR ---
+HPI: This is a {random.choice(['new', 'established'])} patient with {condition['condition_name']} (ICD-10: {condition['icd10_code']}). 
+Patient reports {symptom1} and {symptom2} for the past {random.randint(1, 8)} weeks.
+
+MEDICAL HISTORY: {condition['condition_name']}
+
+CURRENT MEDICATIONS: {', '.join(condition['medications'][:2])}
+
+ALLERGIES: No known drug allergies
+
+ASSESSMENT: {condition['condition_name']} - currently {random.choice(['stable', 'improving', 'requiring adjustment'])} on current regimen.
+
+PLAN:
+1. Continue current medications
+2. Follow-up in {random.choice([4, 6, 8, 12])} weeks
+3. Labs ordered: {random.choice(['HbA1c', 'CMP', 'CBC', 'Lipid panel', 'TSH'])}
+4. Patient education provided
+
+Visit Date: {visit_date}
+Provider: {doctor}"""
+
+
+def generate_dosage(med_name: str, form: str, example: str) -> str:
+    """Generate realistic dosage."""
+    dosage_formats = {
+        "tablet": ["25mg", "50mg", "100mg", "200mg", "500mg", "10mg once daily", "20mg twice daily"],
+        "capsule": ["25mg", "50mg", "100mg", "75mg/25mg", "10/325mg", "25mcg", "50mcg"],
+        "liquid": ["5ml", "10ml", "15ml", "5ml twice daily", "10ml once daily"],
+        "inhaler": ["90mcg/actuation", "50mcg/actuation", "2 puffs", "1-2 puffs PRN"],
+        "cream": ["1% cream", "0.5% ointment", "thin layer", "apply twice daily"],
+        "patch": ["25mcg/hr", "50mcg/hr", "100mcg/hr", "apply once weekly"],
+        "injection": ["10 units", "20 units", "0.5ml", "1ml IM", "subcutaneous"],
+        "drops": ["1-2 drops", "2 drops", "one drop per nostril"],
+        "syrup": ["5ml", "10ml", "15ml", "1 tbsp"],
+    }
+    
+    if form in dosage_formats:
+        return random.choice(dosage_formats[form])
+    return example if example else f"{random.randint(1, 10) * 10}mg"
+
 
 def generate_bulk_data():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
         logger.info(f"Created data directory: {DATA_DIR}")
-
-    # 1. Get Seeds from AI
-    seeder = MedicalSeeder()
-    conditions_db = seeder.generate_medical_knowledge()
     
-    # CRITICAL FIX: Ensure we never proceed with empty conditions
-    if not conditions_db:
-        logger.warning("Conditions DB is empty despite fallback attempts. Forcing hardcoded fallback.")
-        conditions_db = seeder.get_fallback_data()
-
-    # 2. Generate Clinics (Static 50)
+    # Load/generate medical conditions (cached)
+    conditions_db = load_cached_conditions()
+    
+    # 1. Generate Clinics
     logger.info("Generating Clinics...")
     clinics = []
-    clinic_names = ["Downtown", "Westside", "North Hills", "Valley", "City", "Lakeside", "Riverside", "Central"]
-    clinic_types = ["Health", "Clinic", "Family Practice", "Wellness Center", "Urgent Care"]
-    locations = ["New York", "Chicago", "San Francisco", "Austin", "Seattle", "Boston", "Miami"]
+    clinic_prefixes = ["Downtown", "Westside", "North Hills", "Valley", "City", "Lakeside", "Riverside", 
+                       "Central", "Metro", "Community", "Family First", "Prime Care", "Sunrise", "Oakwood"]
+    clinic_types = ["Medical Center", "Health Clinic", "Family Practice", "Wellness Center", "Urgent Care", 
+                    "Primary Care", "Internal Medicine"]
+    locations = ["New York", "Chicago", "San Francisco", "Austin", "Seattle", "Boston", "Miami", 
+                 "Denver", "Phoenix", "Los Angeles", "Atlanta", "Portland", "Dallas"]
     
     for i in range(1, 51):
-        clinics.append(Clinic(
-            clinic_id=i,
-            name=f"{random.choice(clinic_names)} {random.choice(clinic_types)}",
-            location=random.choice(locations)
-        ))
-
-    # 3. Generate Patients, Notes, Rx
+        clinics.append({
+            "clinic_id": i,
+            "name": f"{random.choice(clinic_prefixes)} {random.choice(clinic_types)}",
+            "location": random.choice(locations)
+        })
+    
+    # 2. Generate Patients
     logger.info(f"Generating {NUM_PATIENTS} patients and associated records...")
     
     patients = []
-    notes = []
     prescriptions = []
+    clinical_notes = []
     
-    doctors = [f"Dr. {fake.last_name()}" for _ in range(100)]
-    insurances = ["BlueCross", "Aetna", "Medicare", "UnitedHealth", "Cigna", "Kaiser"]
-    
-    today = datetime.now()
+    doctors = [f"Dr. {fake.first_name()} {fake.last_name()}" for _ in range(100)]
+    insurances = ["BlueCross BlueShield", "Aetna", "Medicare", "UnitedHealthcare", "Cigna", "Kaiser Permanente", "Humana"]
     
     for i in tqdm(range(1, NUM_PATIENTS + 1), desc="Generating Data"):
         # Patient
-        p_clinic = random.randint(1, 50)
-        p = Patient(
-            patient_id=i,
-            full_name=fake.name(),
-            dob=fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y-%m-%d"),
-            gender=random.choice(["Male", "Female"]),
-            insurance_provider=random.choice(insurances),
-            clinic_id=p_clinic
-        )
-        patients.append(p)
-
-        # Assign a random medical condition from the AI DB
-        # SAFETY CHECK: Random.choice will crash if list is empty, but we handled that above.
-        cond = random.choice(conditions_db)
+        patient = {
+            "patient_id": i,
+            "full_name": fake.name(),
+            "dob": fake.date_of_birth(minimum_age=18, maximum_age=90).strftime("%Y-%m-%d"),
+            "gender": random.choice(["Male", "Female"]),
+            "insurance_provider": random.choice(insurances),
+            "clinic_id": random.randint(1, 50)
+        }
+        patients.append(patient)
         
-        # Clinical Note
-        visit_delta = random.randint(0, 365)
-        visit_date = (today - timedelta(days=visit_delta)).strftime("%Y-%m-%d")
+        # Assign condition (weighted towards chronic)
+        weights = [15 if c.get("chronic", False) else 5 for c in conditions_db]
+        condition = random.choices(conditions_db, weights=weights)[0]
         
-        # Handle templates safely
-        templates = cond.get("templates", ["Patient {name} visited for routine checkup."])
-        if not templates: templates = ["Patient {name} visited for routine checkup."]
-        note_template = random.choice(templates)
+        visit_date = (today - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d")
+        doctor = random.choice(doctors)
         
-        n = ClinicalNote(
-            note_id=i + 1000,
-            patient_id=i,
-            visit_date=visit_date,
-            doctor_name=random.choice(doctors),
-            diagnosis_code=cond.get("code", "R69"),
-            condition_name=cond.get("condition", "General"),
-            note_text=note_template.replace("{name}", p.full_name)
-        )
-        notes.append(n)
-
-        # Prescription
-        meds_list = cond.get("meds", ["Vitamin D 1000IU"])
-        if not meds_list: meds_list = ["Vitamin D 1000IU"]
-        med_str = random.choice(meds_list)
-
-        # Split medication name from dosage using regex
-        # Pattern: name is everything before first numeric value (e.g., "Lisinopril 10mg" → name="Lisinopril", dosage="10mg")
-        med_match = re.match(r'^(.+?)\s+(\d+.*)', med_str)
-        if med_match:
-            med_name = med_match.group(1).strip()
-            dosage = med_match.group(2).strip()
+        # Generate clinical note using template
+        note_text = generate_note_from_template(patient["full_name"], condition, doctor, visit_date)
+        doctor_notes = random.choice(condition.get("note_templates", ["Routine visit."]))
+        
+        clinical_notes.append({
+            "note_id": i + 100000,
+            "patient_id": i,
+            "visit_date": visit_date,
+            "doctor_name": doctor,
+            "diagnosis_code": condition["icd10_code"],
+            "condition_name": condition["condition_name"],
+            "note_text": note_text,
+            "doctor_notes": doctor_notes.replace("{symptom}", random.choice(condition.get("symptoms", ["symptoms"])))
+        })
+        
+        # Generate prescriptions (1-3 per patient)
+        is_chronic = condition.get("chronic", False)
+        num_rx = random.choices([1, 2, 3], weights=[50, 35, 15] if is_chronic else [60, 30, 10])[0]
+        
+        meds = condition.get("medications", ["Generic Med"])
+        forms = condition.get("dosage_forms", ["tablet"])
+        examples = condition.get("dosage_examples", ["100mg"])
+        
+        # Pick medications
+        if len(meds) > num_rx:
+            selected_meds = random.sample(meds, num_rx)
         else:
-            med_name = med_str.strip()
-            dosage = "Standard"
+            selected_meds = meds[:num_rx]
         
-        days_supply = random.choice([30, 60, 90])
-        status_roll = random.random()
-        
-        if status_roll < 0.7: 
-            # Good
-            days_ago = random.randint(1, days_supply - 5)
-            status = "Active"
-        elif status_roll < 0.9:
-            # Due Soon
-            days_ago = days_supply - 2
-            status = "Active"
-        else:
-            # Overdue
-            days_ago = days_supply + random.randint(10, 50)
-            status = "Expired"
-
-        last_filled = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
-
-        rx = Prescription(
-            rx_id=i + 5000,
-            patient_id=i,
-            medication_name=med_name,
-            dosage=dosage,
-            days_supply=days_supply,
-            refills_remaining=random.randint(0, 5),
-            last_filled_date=last_filled,
-            status=status
-        )
-        prescriptions.append(rx)
-
-    # 4. Write to CSVs
+        for j, med in enumerate(selected_meds):
+            form_idx = min(j, len(forms) - 1)
+            ex_idx = min(j, len(examples) - 1)
+            
+            prescriptions.append({
+                "rx_id": i * 10 + j + 1,
+                "patient_id": i,
+                "medication_name": med,
+                "dosage": generate_dosage(med, forms[form_idx], examples[ex_idx]),
+                "form": forms[form_idx] if form_idx < len(forms) else "tablet",
+                "drug_class": condition["condition_name"],
+                "days_supply": random.choice([30, 60, 90]),
+                "refills_remaining": random.randint(0, 5),
+                "last_filled_date": (today - timedelta(days=random.randint(1, 60))).strftime("%Y-%m-%d"),
+                "status": random.choices(["Active", "Active", "Expired", "Not Purchased"], weights=[65, 15, 15, 5])[0]
+            })
+    
+    # 3. Write to CSVs
     logger.info("Starting CSV export...")
     
-    def write_csv(filename, data_list, model_class):
+    def write_csv(filename, data_list, fieldnames):
         filepath = os.path.join(DATA_DIR, filename)
         logger.info(f"Writing {len(data_list)} rows to {filepath}...")
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(model_class.model_fields.keys())
-            for item in data_list:
-                writer.writerow(item.model_dump().values())
-        logger.info(f"Successfully saved {filename}")
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(data_list)
+        logger.info(f"Saved: {filename}")
+    
+    write_csv("clinics.csv", clinics, ["clinic_id", "name", "location"])
+    write_csv("patients.csv", patients, ["patient_id", "full_name", "dob", "gender", "insurance_provider", "clinic_id"])
+    write_csv("prescriptions.csv", prescriptions, ["rx_id", "patient_id", "medication_name", "dosage", "form", "drug_class", "days_supply", "refills_remaining", "last_filled_date", "status"])
+    write_csv("clinical_notes.csv", clinical_notes, ["note_id", "patient_id", "visit_date", "doctor_name", "diagnosis_code", "condition_name", "note_text", "doctor_notes"])
+    
+    # Summary
+    unique_patients = len(set(p["patient_id"] for p in patients))
+    avg_rx = len(prescriptions) / unique_patients if unique_patients > 0 else 0
+    
+    logger.info("=" * 60)
+    logger.info("SUCCESS: Generated realistic medical dataset")
+    logger.info(f"Patients: {unique_patients}")
+    logger.info(f"Prescriptions: {len(prescriptions)} (avg {avg_rx:.2f}/patient)")
+    logger.info(f"Clinical Notes: {len(clinical_notes)}")
+    logger.info(f"Conditions: {len(conditions_db)}")
+    logger.info("=" * 60)
 
-    write_csv("clinics.csv", clinics, Clinic)
-    write_csv("patients.csv", patients, Patient)
-    write_csv("clinical_notes.csv", notes, ClinicalNote)
-    write_csv("prescriptions.csv", prescriptions, Prescription)
-
-    logger.info("SUCCESS: Generated massive dataset.")
-    logger.info(f"Total Rows: {len(clinics) + len(patients) + len(notes) + len(prescriptions)}")
 
 if __name__ == "__main__":
     generate_bulk_data()
