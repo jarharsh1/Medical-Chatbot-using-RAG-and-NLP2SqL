@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-NUM_PATIENTS = 35000
+NUM_PATIENTS = 65375
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 OS_SEED = 42
@@ -29,7 +29,30 @@ random.seed(OS_SEED)
 
 today = datetime.now()
 
-# --- CACHING FOR LLM-GENERATED CONTENT ---
+# --- REALISTIC DOSAGE FORMATS ---
+
+DOSAGE_FORMATS = {
+    "tablet": ["25mg", "50mg", "100mg", "200mg", "500mg", "10mg once daily", "20mg twice daily", "325mg", "600mg", "800mg"],
+    "capsule": ["25mg", "50mg", "100mg", "75mg/25mg", "10/325mg", "25mcg", "50mcg", "75mcg", "150mg", "200mg"],
+    "liquid": ["5ml", "10ml", "15ml", "5ml twice daily", "10ml once daily", "2.5ml", "1 tsp (5ml)", "15ml three times daily"],
+    "inhaler": ["90mcg/actuation", "50mcg/actuation", "110mcg/actuation", "2 puffs", "1-2 puffs PRN", "100mcg/dose", "SABA rescue inhaler"],
+    "cream": ["1% cream", "0.5% ointment", "2.5% gel", "thin layer", "pea-sized amount", "apply twice daily", "apply to affected area"],
+    "patch": ["25mcg/hr", "50mcg/hr", "100mcg/hr", "apply once weekly", "72-hour patch", "apply every 24 hours"],
+    "injection": ["10 units", "20 units", "0.5ml IM", "1ml IM", "subcutaneous", "25 units SC", "40 units", "0.1ml intralesional"],
+    "drops": ["1-2 drops", "2 drops OU", "1 drop OS", "one drop per nostril", "2 drops in each ear", "ophthalmic drops"],
+    "syrup": ["5ml", "10ml", "15ml", "1 tbsp (15ml)", "2 tsp (10ml)", "5ml every 6 hours", "10ml twice daily"],
+    "spray": ["1 spray each nostril", "2 sprays per nostril", "nasal spray", "1 spray"],
+    "suppository": ["25mg", "50mg", "10mg pediatric", "insert rectally"],
+    "pessary": ["100mg", "500mg", "insert vaginally"],
+}
+
+def get_dosage(form: str) -> str:
+    """Get realistic dosage for medication form."""
+    if form in DOSAGE_FORMATS:
+        return random.choice(DOSAGE_FORMATS[form])
+    return random.choice(DOSAGE_FORMATS.get("tablet", ["100mg"]))
+
+# --- LLM-BASED MEDICAL DATA ---
 
 def load_cached_conditions() -> List[Dict]:
     """Load cached medical conditions or generate new ones using LLM."""
@@ -43,7 +66,6 @@ def load_cached_conditions() -> List[Dict]:
     logger.info("Generating medical conditions using LLM...")
     conditions = generate_medical_conditions_llm()
     
-    # Cache for future use
     with open(cache_file, 'w') as f:
         json.dump(conditions, f, indent=2)
     logger.info(f"Cached {len(conditions)} conditions to {cache_file}")
@@ -52,11 +74,10 @@ def load_cached_conditions() -> List[Dict]:
 
 
 def generate_medical_conditions_llm() -> List[Dict]:
-    """Generate realistic medical conditions with medications and templates using LLM."""
+    """Generate realistic medical conditions with medications using LLM."""
     
     prompt = """
-Generate 15 diverse medical conditions as a JSON object.
-Each condition needs realistic data for patient records.
+Generate 20 diverse medical conditions as JSON. Include chronic diseases and acute conditions.
 
 Return JSON:
 {
@@ -64,24 +85,44 @@ Return JSON:
         {
             "condition_name": "Type 2 Diabetes Mellitus",
             "icd10_code": "E11.9",
-            "medications": ["Metformin", "Glipizide", "Empagliflozin", "Insulin Glargine", "Glimepiride"],
-            "dosage_forms": ["tablet", "tablet", "tablet", "injection", "tablet"],
-            "dosage_examples": ["500mg", "5mg", "10mg", "20 units", "2mg"],
-            "symptoms": ["increased thirst", "fatigue", "frequent urination", "blurred vision", "slow healing"],
+            "medications": ["Metformin 500mg", "Glipizide 5mg", "Empagliflozin 10mg", "Insulin Glargine 20 units", "Glimepiride 2mg"],
+            "medication_forms": ["tablet", "tablet", "tablet", "injection", "tablet"],
+            "symptoms": ["increased thirst", "frequent urination", "fatigue", "blurred vision", "slow healing wounds"],
             "chronic": true,
-            "note_templates": [
-                "Follow-up for diabetes management. HbA1c shows {symptom}. Patient reports {symptom}. Continue current regimen.",
-                "Routine diabetic check. {symptom} noted. Discussed diet and exercise. Scheduled lab work.",
-                "Diabetes review. {symptom} and {symptom}. Medication adjustment considered. Monitor closely."
-            ]
+            "severity_levels": ["well-controlled", "fairly controlled", "poorly controlled"]
         }
     ]
 }
 
-Include: Diabetes, Hypertension, Asthma, COPD, Depression, Anxiety, Hyperlipidemia, Hypothyroidism, 
-GERD, Arthritis, Acne, Allergic Rhinitis, Migraine, Anemia, Osteoporosis.
+Required conditions:
+1. Type 2 Diabetes Mellitus (E11.9)
+2. Hypertension (I10)
+3. Asthma (J45.909)
+4. COPD (J44.9)
+5. Hyperlipidemia (E78.5)
+6. Hypothyroidism (E03.9)
+7. Depression (F32.9)
+8. Anxiety Disorder (F41.9)
+9. GERD (K21.9)
+10. Osteoarthritis (M19.90)
+11. Allergic Rhinitis (J30.9)
+12. Migraine (G43.9)
+13. Iron Deficiency Anemia (D50.9)
+14. Osteoporosis (M81.0)
+15. Acne Vulgaris (L70.9)
+16. Pneumonia (J18.9)
+17. UTI (N39.0)
+18. Cellulitis (L03.90)
+19. Back Pain (M54.5)
+20. Ear Infection (H66.90)
 
-Make it realistic and diverse.
+For each condition, provide:
+- Realistic medications with dosages
+- Appropriate forms (tablet, capsule, inhaler, cream, injection, drops, etc.)
+- Common symptoms
+- Whether chronic or acute
+
+Make it realistic and medically accurate.
 """
     
     try:
@@ -100,66 +141,94 @@ Make it realistic and diverse.
         if not conditions:
             raise ValueError("No conditions generated")
         
-        logger.info(f"LLM generated {len(conditions)} conditions")
-        return conditions
+        # Parse medications to extract name and dosage
+        parsed_conditions = []
+        for c in conditions:
+            meds = []
+            forms = c.get("medication_forms", [])
+            for i, med_str in enumerate(c.get("medications", [])):
+                # Parse "Name Dosage" format
+                parts = med_str.rsplit(None, 1)
+                if len(parts) == 2:
+                    name, dosage = parts
+                else:
+                    name = med_str
+                    dosage = get_dosage(forms[i] if i < len(forms) else "tablet")
+                meds.append({
+                    "name": name,
+                    "dosage": dosage,
+                    "form": forms[i] if i < len(forms) else "tablet"
+                })
+            
+            parsed_conditions.append({
+                "condition_name": c["condition_name"],
+                "icd10_code": c["icd10_code"],
+                "medications": meds,
+                "symptoms": c.get("symptoms", []),
+                "chronic": c.get("chronic", False),
+                "severity": c.get("severity_levels", ["stable"])[0]
+            })
+        
+        logger.info(f"LLM generated {len(parsed_conditions)} conditions")
+        return parsed_conditions
         
     except Exception as e:
         logger.error(f"LLM generation failed: {e}")
         raise
 
 
-def generate_note_from_template(patient_name: str, condition: Dict, doctor: str, visit_date: str) -> str:
-    """Generate clinical note using templates."""
-    templates = condition.get("note_templates", ["Patient presents for routine visit."])
+def generate_clinical_note(patient: Dict, condition: Dict, doctor: str) -> str:
+    """Generate realistic clinical note."""
     symptoms = condition.get("symptoms", ["general complaints"])
+    severity = condition.get("severity", "stable")
     
-    template = random.choice(templates)
-    symptom1 = random.choice(symptoms)
-    symptom2 = random.choice([s for s in symptoms if s != symptom1] or symptoms)
+    chief_complaint = random.choice(symptoms)
+    symptom2 = random.choice([s for s in symptoms if s != chief_complaint] or symptoms)
     
-    note = template.replace("{symptom}", symptom1).replace("{symptom2}", symptom2)
-    
-    # Add structured sections
-    return f"""CHIEF COMPLAINT: {patient_name} presents with {symptom1}.
+    templates = [
+        f"""CHIEF COMPLAINT: {patient['full_name']} presents with {chief_complaint}.
 
-HPI: This is a {random.choice(['new', 'established'])} patient with {condition['condition_name']} (ICD-10: {condition['icd10_code']}). 
-Patient reports {symptom1} and {symptom2} for the past {random.randint(1, 8)} weeks.
+HPI: {patient['gender']} patient, age {random.randint(18, 80)}, presents with {chief_complaint} for {random.randint(1, 8)} weeks. 
+Also reports {symptom2}. Symptoms affect daily activities. No known triggers identified.
 
-MEDICAL HISTORY: {condition['condition_name']}
+MEDICAL HISTORY: {condition['condition_name']} - {severity}
 
-CURRENT MEDICATIONS: {', '.join(condition['medications'][:2])}
+MEDICATIONS: {', '.join([m['name'] for m in condition['medications'][:3]])}
 
-ALLERGIES: No known drug allergies
+ALLERGIES: NKDA
 
-ASSESSMENT: {condition['condition_name']} - currently {random.choice(['stable', 'improving', 'requiring adjustment'])} on current regimen.
+ASSESSMENT: {condition['condition_name']} (ICD-10: {condition['icd10_code']}) - {random.choice(['stable', 'improving', 'requires adjustment'])}
 
 PLAN:
 1. Continue current medications
-2. Follow-up in {random.choice([4, 6, 8, 12])} weeks
-3. Labs ordered: {random.choice(['HbA1c', 'CMP', 'CBC', 'Lipid panel', 'TSH'])}
+2. Follow-up in {random.choice([2, 4, 6, 8, 12])} weeks
+3. Labs/tests: {random.choice(['CBC', 'CMP', 'Lipid panel', 'HbA1c', 'TSH', 'CRP', 'ESR'])}
 4. Patient education provided
 
-Visit Date: {visit_date}
-Provider: {doctor}"""
+Provider: {doctor}
+Date: {(today - timedelta(days=random.randint(0, 90))).strftime('%Y-%m-%d')}""",
+        
+        f"""SUBJECTIVE: {patient['full_name']} here for follow-up of {condition['condition_name']}. 
+Reports {chief_complaint} and {symptom2}. 
+Symptoms rated {random.randint(1, 10)}/10 severity.
 
+OBJECTIVE:
+- BP: {random.randint(110, 160)}/{random.randint(60, 100)}
+- HR: {random.randint(60, 100)}
+- General: Alert, oriented, no acute distress
 
-def generate_dosage(med_name: str, form: str, example: str) -> str:
-    """Generate realistic dosage."""
-    dosage_formats = {
-        "tablet": ["25mg", "50mg", "100mg", "200mg", "500mg", "10mg once daily", "20mg twice daily"],
-        "capsule": ["25mg", "50mg", "100mg", "75mg/25mg", "10/325mg", "25mcg", "50mcg"],
-        "liquid": ["5ml", "10ml", "15ml", "5ml twice daily", "10ml once daily"],
-        "inhaler": ["90mcg/actuation", "50mcg/actuation", "2 puffs", "1-2 puffs PRN"],
-        "cream": ["1% cream", "0.5% ointment", "thin layer", "apply twice daily"],
-        "patch": ["25mcg/hr", "50mcg/hr", "100mcg/hr", "apply once weekly"],
-        "injection": ["10 units", "20 units", "0.5ml", "1ml IM", "subcutaneous"],
-        "drops": ["1-2 drops", "2 drops", "one drop per nostril"],
-        "syrup": ["5ml", "10ml", "15ml", "1 tbsp"],
-    }
+ASSESSMENT: {condition['condition_name']} - {severity}. 
+Current regimen partially effective.
+
+PLAN:
+1. Optimize therapy
+2. Monitor symptoms
+3. Return if {random.choice(['symptoms worsen', 'no improvement in 2 weeks', 'side effects develop'])}
+
+Signed: {doctor}"""
+    ]
     
-    if form in dosage_formats:
-        return random.choice(dosage_formats[form])
-    return example if example else f"{random.randint(1, 10) * 10}mg"
+    return random.choice(templates)
 
 
 def generate_bulk_data():
@@ -167,28 +236,26 @@ def generate_bulk_data():
         os.makedirs(DATA_DIR)
         logger.info(f"Created data directory: {DATA_DIR}")
     
-    # Load/generate medical conditions (cached)
     conditions_db = load_cached_conditions()
     
     # 1. Generate Clinics
     logger.info("Generating Clinics...")
     clinics = []
-    clinic_prefixes = ["Downtown", "Westside", "North Hills", "Valley", "City", "Lakeside", "Riverside", 
-                       "Central", "Metro", "Community", "Family First", "Prime Care", "Sunrise", "Oakwood"]
-    clinic_types = ["Medical Center", "Health Clinic", "Family Practice", "Wellness Center", "Urgent Care", 
-                    "Primary Care", "Internal Medicine"]
+    clinic_names = ["Downtown Medical", "Westside Health", "North Hills Clinic", "Valley Family", 
+                   "City Center", "Lakeside Wellness", "Riverside Primary", "Central Care",
+                   "Metro Medical", "Community Health", "Family First", "Prime Care", "Sunrise Medical"]
     locations = ["New York", "Chicago", "San Francisco", "Austin", "Seattle", "Boston", "Miami", 
-                 "Denver", "Phoenix", "Los Angeles", "Atlanta", "Portland", "Dallas"]
+                 "Denver", "Phoenix", "Los Angeles", "Atlanta", "Portland", "Dallas", "Houston"]
     
     for i in range(1, 51):
         clinics.append({
             "clinic_id": i,
-            "name": f"{random.choice(clinic_prefixes)} {random.choice(clinic_types)}",
+            "name": f"{random.choice(clinic_names)} - {random.choice(['Main', 'North', 'South', 'East', 'West'])}",
             "location": random.choice(locations)
         })
     
     # 2. Generate Patients
-    logger.info(f"Generating {NUM_PATIENTS} patients and associated records...")
+    logger.info(f"Generating {NUM_PATIENTS} patients...")
     
     patients = []
     prescriptions = []
@@ -198,7 +265,6 @@ def generate_bulk_data():
     insurances = ["BlueCross BlueShield", "Aetna", "Medicare", "UnitedHealthcare", "Cigna", "Kaiser Permanente", "Humana"]
     
     for i in tqdm(range(1, NUM_PATIENTS + 1), desc="Generating Data"):
-        # Patient
         patient = {
             "patient_id": i,
             "full_name": fake.name(),
@@ -209,70 +275,77 @@ def generate_bulk_data():
         }
         patients.append(patient)
         
-        # Assign condition (weighted towards chronic)
-        weights = [15 if c.get("chronic", False) else 5 for c in conditions_db]
+        # Weighted towards chronic conditions
+        weights = [20 if c.get("chronic", False) else 5 for c in conditions_db]
         condition = random.choices(conditions_db, weights=weights)[0]
         
-        visit_date = (today - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d")
         doctor = random.choice(doctors)
         
-        # Generate clinical note using template
-        note_text = generate_note_from_template(patient["full_name"], condition, doctor, visit_date)
-        doctor_notes = random.choice(condition.get("note_templates", ["Routine visit."]))
-        
+        # Clinical note
+        note_text = generate_clinical_note(patient, condition, doctor)
         clinical_notes.append({
             "note_id": i + 100000,
             "patient_id": i,
-            "visit_date": visit_date,
+            "visit_date": (today - timedelta(days=random.randint(0, 180))).strftime("%Y-%m-%d"),
             "doctor_name": doctor,
             "diagnosis_code": condition["icd10_code"],
             "condition_name": condition["condition_name"],
             "note_text": note_text,
-            "doctor_notes": doctor_notes.replace("{symptom}", random.choice(condition.get("symptoms", ["symptoms"])))
+            "doctor_notes": f"Follow-up for {condition['condition_name']}. {random.choice(condition.get('symptoms', ['Symptoms noted']))}."
         })
         
-        # Generate prescriptions (1-3 per patient)
+        # Prescriptions (1-4 per patient)
         is_chronic = condition.get("chronic", False)
-        num_rx = random.choices([1, 2, 3], weights=[50, 35, 15] if is_chronic else [60, 30, 10])[0]
+        num_rx = random.choices([1, 2, 3, 4], 
+                               weights=[45, 30, 15, 10] if is_chronic else [60, 25, 10, 5])[0]
         
-        meds = condition.get("medications", ["Generic Med"])
-        forms = condition.get("dosage_forms", ["tablet"])
-        examples = condition.get("dosage_examples", ["100mg"])
+        meds = condition.get("medications", [{"name": "Medication", "dosage": "100mg", "form": "tablet"}])
         
-        # Pick medications
-        if len(meds) > num_rx:
-            selected_meds = random.sample(meds, num_rx)
-        else:
-            selected_meds = meds[:num_rx]
+        # Select medications
+        selected_meds = random.sample(meds, min(num_rx, len(meds)))
         
         for j, med in enumerate(selected_meds):
-            form_idx = min(j, len(forms) - 1)
-            ex_idx = min(j, len(examples) - 1)
+            days_supply = random.choice([30, 60, 90])
+            
+            status_roll = random.random()
+            if status_roll < 0.65:
+                status = "Active"
+                days_ago = random.randint(1, days_supply - 1)
+            elif status_roll < 0.80:
+                status = "Active"
+                days_ago = days_supply - random.randint(1, 5)
+            elif status_roll < 0.95:
+                status = "Expired"
+                days_ago = days_supply + random.randint(10, 60)
+            else:
+                status = "Not Purchased"
+                days_supply = 0
+            
+            last_filled = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d") if status != "Not Purchased" else None
             
             prescriptions.append({
                 "rx_id": i * 10 + j + 1,
                 "patient_id": i,
-                "medication_name": med,
-                "dosage": generate_dosage(med, forms[form_idx], examples[ex_idx]),
-                "form": forms[form_idx] if form_idx < len(forms) else "tablet",
+                "medication_name": med["name"],
+                "dosage": med["dosage"],
+                "form": med["form"],
                 "drug_class": condition["condition_name"],
-                "days_supply": random.choice([30, 60, 90]),
-                "refills_remaining": random.randint(0, 5),
-                "last_filled_date": (today - timedelta(days=random.randint(1, 60))).strftime("%Y-%m-%d"),
-                "status": random.choices(["Active", "Active", "Expired", "Not Purchased"], weights=[65, 15, 15, 5])[0]
+                "days_supply": days_supply,
+                "refills_remaining": random.randint(0, 5) if status == "Active" else 0,
+                "last_filled_date": last_filled,
+                "status": status
             })
     
-    # 3. Write to CSVs
-    logger.info("Starting CSV export...")
+    # 3. Write CSVs
+    logger.info("Writing CSV files...")
     
     def write_csv(filename, data_list, fieldnames):
         filepath = os.path.join(DATA_DIR, filename)
-        logger.info(f"Writing {len(data_list)} rows to {filepath}...")
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(data_list)
-        logger.info(f"Saved: {filename}")
+        logger.info(f"Saved: {filename} ({len(data_list)} rows)")
     
     write_csv("clinics.csv", clinics, ["clinic_id", "name", "location"])
     write_csv("patients.csv", patients, ["patient_id", "full_name", "dob", "gender", "insurance_provider", "clinic_id"])
@@ -280,12 +353,10 @@ def generate_bulk_data():
     write_csv("clinical_notes.csv", clinical_notes, ["note_id", "patient_id", "visit_date", "doctor_name", "diagnosis_code", "condition_name", "note_text", "doctor_notes"])
     
     # Summary
-    unique_patients = len(set(p["patient_id"] for p in patients))
-    avg_rx = len(prescriptions) / unique_patients if unique_patients > 0 else 0
-    
+    avg_rx = len(prescriptions) / NUM_PATIENTS
     logger.info("=" * 60)
-    logger.info("SUCCESS: Generated realistic medical dataset")
-    logger.info(f"Patients: {unique_patients}")
+    logger.info("SUCCESS: Realistic medical dataset generated")
+    logger.info(f"Patients: {NUM_PATIENTS}")
     logger.info(f"Prescriptions: {len(prescriptions)} (avg {avg_rx:.2f}/patient)")
     logger.info(f"Clinical Notes: {len(clinical_notes)}")
     logger.info(f"Conditions: {len(conditions_db)}")

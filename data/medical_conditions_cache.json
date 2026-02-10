@@ -1,0 +1,617 @@
+[
+  {
+    "condition_name": "Type 2 Diabetes Mellitus",
+    "icd10_code": "E11.9",
+    "medications": [
+      {
+        "name": "Metformin",
+        "dosage": "500mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Glipizide",
+        "dosage": "5mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Empagliflozin",
+        "dosage": "10mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Insulin Glargine 20",
+        "dosage": "units",
+        "form": "injection"
+      },
+      {
+        "name": "Glimepiride",
+        "dosage": "2mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "increased thirst",
+      "frequent urination",
+      "fatigue",
+      "blurred vision",
+      "slow healing wounds"
+    ],
+    "chronic": true,
+    "severity": "well-controlled"
+  },
+  {
+    "condition_name": "Hypertension",
+    "icd10_code": "I10",
+    "medications": [
+      {
+        "name": "Lisinopril",
+        "dosage": "20mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Amlodipine",
+        "dosage": "5mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Losartan",
+        "dosage": "50mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Hydrochlorothiazide",
+        "dosage": "25mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Metoprolol Succinate ER",
+        "dosage": "50mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "headaches",
+      "nasal congestion",
+      "blurred vision",
+      "chest pain",
+      "shortness of breath"
+    ],
+    "chronic": true,
+    "severity": "controlled"
+  },
+  {
+    "condition_name": "Asthma",
+    "icd10_code": "J45.909",
+    "medications": [
+      {
+        "name": "Albuterol Inhaler",
+        "dosage": "90mcg/actuation",
+        "form": "inhaler"
+      },
+      {
+        "name": "Fluticasone Propionate Inhalation Aerosol",
+        "dosage": "88mcg/puff",
+        "form": "inhaler"
+      },
+      {
+        "name": "Montelukast",
+        "dosage": "10mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "wheezing",
+      "shortness of breath",
+      "chest tightness",
+      "coughing",
+      "nighttime awakening due to shortness of breath"
+    ],
+    "chronic": true,
+    "severity": "mild intermittent"
+  },
+  {
+    "condition_name": "COPD",
+    "icd10_code": "J44.9",
+    "medications": [
+      {
+        "name": "Tiotropium Bromide Inhalation Powder",
+        "dosage": "5mcg",
+        "form": "inhaler powder"
+      },
+      {
+        "name": "Salbutamol inhaler",
+        "dosage": "100mcg/puff",
+        "form": "inhaler"
+      },
+      {
+        "name": "Ipratropium/Budesonide nebulizer",
+        "dosage": "solution",
+        "form": "nebulizer"
+      }
+    ],
+    "symptoms": [
+      "chronic cough",
+      "wheezing",
+      "shortness of breath",
+      "sputum production",
+      "fatigue"
+    ],
+    "chronic": true,
+    "severity": "mild"
+  },
+  {
+    "condition_name": "Hyperlipidemia",
+    "icd10_code": "E78.5",
+    "medications": [
+      {
+        "name": "Atorvastatin",
+        "dosage": "20mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Simvastatin",
+        "dosage": "40mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Pravastatin",
+        "dosage": "40mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "nausea",
+      "muscle pain",
+      "headache",
+      "diarrhea",
+      "abdominal pain"
+    ],
+    "chronic": true,
+    "severity": "well-controlled cholesterol levels"
+  },
+  {
+    "condition_name": "Hypothyroidism",
+    "icd10_code": "E03.9",
+    "medications": [
+      {
+        "name": "Levothyroxine",
+        "dosage": "25mcg",
+        "form": "tablet"
+      },
+      {
+        "name": "Levothyroxine",
+        "dosage": "50mcg",
+        "form": "tablet"
+      },
+      {
+        "name": "Levothyroxine",
+        "dosage": "75mcg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "fatigue",
+      "weight gain",
+      "dry skin",
+      "hair loss",
+      "depression"
+    ],
+    "chronic": true,
+    "severity": "well-managed"
+  },
+  {
+    "condition_name": "Depression",
+    "icd10_code": "F32.9",
+    "medications": [
+      {
+        "name": "Sertraline",
+        "dosage": "50mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Fluoxetine",
+        "dosage": "40mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Escitalopram",
+        "dosage": "20mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "persistent sadness",
+      "loss of interest in activities",
+      "irritability",
+      "sleep disturbances",
+      "appetite changes"
+    ],
+    "chronic": true,
+    "severity": "mild"
+  },
+  {
+    "condition_name": "Anxiety Disorder",
+    "icd10_code": "F41.9",
+    "medications": [
+      {
+        "name": "Xanax",
+        "dosage": "0.5mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Ativan",
+        "dosage": "2mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Buspirone",
+        "dosage": "15mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "anxiousness",
+      "restlessness",
+      "irritability",
+      "fatigue",
+      "concentration difficulties"
+    ],
+    "chronic": true,
+    "severity": "mild anxiety"
+  },
+  {
+    "condition_name": "GERD",
+    "icd10_code": "K21.9",
+    "medications": [
+      {
+        "name": "Omeprazole",
+        "dosage": "20mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Lansoprazole",
+        "dosage": "30mg",
+        "form": "capsule"
+      },
+      {
+        "name": "Rabeprazole",
+        "dosage": "20mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "heartburn",
+      "nausea",
+      "vomiting",
+      "difficulty swallowing",
+      "abdominal pain"
+    ],
+    "chronic": true,
+    "severity": "mild GERD symptoms"
+  },
+  {
+    "condition_name": "Osteoarthritis",
+    "icd10_code": "M19.90",
+    "medications": [
+      {
+        "name": "Ibuprofen",
+        "dosage": "800mg",
+        "form": "capsule"
+      },
+      {
+        "name": "Naproxen",
+        "dosage": "500mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Acetaminophen",
+        "dosage": "375mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "joint pain",
+      "stiffness",
+      "swelling",
+      "decreased range of motion",
+      "muscle weakness"
+    ],
+    "chronic": true,
+    "severity": "mild osteoarthritis"
+  },
+  {
+    "condition_name": "Allergic Rhinitis",
+    "icd10_code": "J30.9",
+    "medications": [
+      {
+        "name": "Fluticasone Propionate Nasal Spray",
+        "dosage": "50mcg/spray",
+        "form": "nasal spray"
+      },
+      {
+        "name": "Cetirizine",
+        "dosage": "10mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Loratadine",
+        "dosage": "10mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "runny nose",
+      "itchy eyes",
+      "congestion",
+      "sneezing",
+      "itching of the nose and throat"
+    ],
+    "chronic": true,
+    "severity": "mild allergic rhinitis"
+  },
+  {
+    "condition_name": "Migraine",
+    "icd10_code": "G43.9",
+    "medications": [
+      {
+        "name": "Ibuprofen",
+        "dosage": "400mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Sumatriptan",
+        "dosage": "50mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Ergotamine Tartrate",
+        "dosage": "2mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "headache",
+      "nausea",
+      "sensitivity to light and sound",
+      "vomiting",
+      "visual disturbances"
+    ],
+    "chronic": false,
+    "severity": "mild migraine"
+  },
+  {
+    "condition_name": "Iron Deficiency Anemia",
+    "icd10_code": "D50.9",
+    "medications": [
+      {
+        "name": "Ferrous Sulfate",
+        "dosage": "325mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Ferric Carboxymaltose Injection",
+        "dosage": "1000mg/mL",
+        "form": "injection"
+      }
+    ],
+    "symptoms": [
+      "fatigue",
+      "weakness",
+      "shortness of breath",
+      "palpitations",
+      "irritability"
+    ],
+    "chronic": true,
+    "severity": "mild iron deficiency anemia"
+  },
+  {
+    "condition_name": "Osteoporosis",
+    "icd10_code": "M81.0",
+    "medications": [
+      {
+        "name": "Alendronate",
+        "dosage": "35mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Zoledronic Acid Injection",
+        "dosage": "4mg",
+        "form": "injection"
+      },
+      {
+        "name": "Risedronate Sodium",
+        "dosage": "35mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "bone pain",
+      "back pain",
+      "loss of height",
+      "fractures",
+      "painful vertebral compression fractures"
+    ],
+    "chronic": true,
+    "severity": "mild osteoporosis"
+  },
+  {
+    "condition_name": "Acne Vulgaris",
+    "icd10_code": "L70.9",
+    "medications": [
+      {
+        "name": "Tretinoin Gel",
+        "dosage": "0.025%",
+        "form": "gel"
+      },
+      {
+        "name": "Benzoyl Peroxide Gel",
+        "dosage": "4%",
+        "form": "gel"
+      },
+      {
+        "name": "Clindamycin Topical Solution",
+        "dosage": "1%",
+        "form": "solution"
+      }
+    ],
+    "symptoms": [
+      "blackheads and whiteheads",
+      "pimples",
+      "cysts",
+      "painful nodules",
+      "redness and swelling of the skin"
+    ],
+    "chronic": true,
+    "severity": "mild acne vulgaris"
+  },
+  {
+    "condition_name": "Pneumonia",
+    "icd10_code": "J18.9",
+    "medications": [
+      {
+        "name": "Amoxicillin",
+        "dosage": "500mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Ceftriaxone Injection",
+        "dosage": "2g",
+        "form": "injection"
+      },
+      {
+        "name": "Azithromycin",
+        "dosage": "500mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "fever",
+      "chills",
+      "shortness of breath",
+      "coughing with phlegm",
+      "chest pain"
+    ],
+    "chronic": false,
+    "severity": "mild pneumonia"
+  },
+  {
+    "condition_name": "UTI",
+    "icd10_code": "N39.0",
+    "medications": [
+      {
+        "name": "Ciprofloxacin",
+        "dosage": "250mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Nitrofurantoin",
+        "dosage": "50mg",
+        "form": "capsule"
+      },
+      {
+        "name": "Trimethoprim-Sulfamethoxazole",
+        "dosage": "DS",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "painful urination",
+      "urinary urgency",
+      "frequent urination",
+      "cloudy urine",
+      "blood in the urine"
+    ],
+    "chronic": false,
+    "severity": "mild UTI"
+  },
+  {
+    "condition_name": "Cellulitis",
+    "icd10_code": "L03.90",
+    "medications": [
+      {
+        "name": "Amoxicillin-Clavulanate",
+        "dosage": "875mg/125mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Levofloxacin",
+        "dosage": "500mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Cefazolin Injection",
+        "dosage": "1g",
+        "form": "injection"
+      }
+    ],
+    "symptoms": [
+      "redness and swelling of the skin",
+      "pain in the infected area",
+      "fever",
+      "fatigue",
+      "chills"
+    ],
+    "chronic": false,
+    "severity": "mild cellulitis"
+  },
+  {
+    "condition_name": "Back Pain",
+    "icd10_code": "M54.5",
+    "medications": [
+      {
+        "name": "Acetaminophen",
+        "dosage": "375mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Ibuprofen",
+        "dosage": "200mg",
+        "form": "capsule"
+      },
+      {
+        "name": "Naproxen",
+        "dosage": "500mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "lower back pain",
+      "muscle spasms",
+      "pain radiating to the legs",
+      "numbness and tingling in the extremities",
+      "weakness"
+    ],
+    "chronic": true,
+    "severity": "mild back pain"
+  },
+  {
+    "condition_name": "Ear Infection",
+    "icd10_code": "H66.90",
+    "medications": [
+      {
+        "name": "Amoxicillin",
+        "dosage": "250mg",
+        "form": "tablet"
+      },
+      {
+        "name": "Cefdinir Oral Suspension 700 mg/5",
+        "dosage": "mL",
+        "form": "suspension"
+      },
+      {
+        "name": "Clarithromycin",
+        "dosage": "250mg",
+        "form": "tablet"
+      }
+    ],
+    "symptoms": [
+      "ear pain",
+      "hearing loss",
+      "fever",
+      "discharge from the ear",
+      "irritability and sleep disturbance"
+    ],
+    "chronic": false,
+    "severity": "mild otitis media"
+  }
+]

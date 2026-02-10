@@ -114,51 +114,6 @@ def init_db():
         _load_csv_to_table(conn, "clinical_notes.csv", "clinical_notes")
         _load_csv_to_table(conn, "prescriptions.csv", "prescriptions")
 
-    # Enrich: give ~30% of patients a 2nd prescription (once)
-    cursor.execute("SELECT MAX(rx_id) FROM prescriptions")
-    max_rx = cursor.fetchone()[0] or 0
-    cursor.execute("SELECT COUNT(*) FROM prescriptions")
-    original_count = cursor.fetchone()[0]
-    if max_rx > 0 and original_count <= max_rx + 100:
-        # Pick ~30% of patients to get a 2nd prescription
-        source_rows = cursor.execute("""
-            SELECT patient_id FROM prescriptions
-            ORDER BY RANDOM() LIMIT ? / 3
-        """, (original_count,)).fetchall()
-        meds = ['Metformin', 'Atorvastatin', 'Omeprazole', 'Amlodipine', 'Losartan', 'Gabapentin']
-        doses = ['10mg once daily', '20mg twice daily', '500mg once daily', '25mg once daily']
-        supplies = [30, 60, 90]
-        import random
-        new_rows = []
-        for i, (pid,) in enumerate(source_rows):
-            new_rx_id = max_rx + 1 + i
-            med = meds[i % len(meds)]
-            dose = doses[i % len(doses)]
-            ds = supplies[i % len(supplies)]
-            refills = i % 4
-            days_offset = i % 120
-            fill_date = (datetime.strptime("2025-10-01", "%Y-%m-%d") + timedelta(days=days_offset)).strftime("%Y-%m-%d")
-            new_rows.append((new_rx_id, pid, med, dose, ds, refills, fill_date, 'Active'))
-        cursor.executemany(
-            "INSERT INTO prescriptions VALUES (?,?,?,?,?,?,?,?)", new_rows
-        )
-        conn.commit()
-
-    # Enrich: mark ~12% of prescriptions as "Not Purchased" (once)
-    cursor.execute("SELECT COUNT(*) FROM prescriptions WHERE status='Not Purchased'")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("""
-            UPDATE prescriptions
-            SET status = 'Not Purchased', last_filled_date = NULL
-            WHERE rx_id IN (
-                SELECT rx_id FROM prescriptions
-                WHERE status = 'Active'
-                ORDER BY RANDOM()
-                LIMIT (SELECT COUNT(*) FROM prescriptions) / 8
-            )
-        """)
-        conn.commit()
-
     conn.close()
 
 
