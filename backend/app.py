@@ -723,6 +723,75 @@ def generate_chart(req: dict):
         raise HTTPException(status_code=500, detail=f"Failed to generate chart: {str(e)}")
 
 
+@app.get("/api/dashboard/charts")
+def get_dashboard_charts():
+    """
+    Get aggregated chart data for the dashboard.
+    Returns data for all dashboard charts (trends, medications, age, insurance, gender).
+    """
+    import pandas as pd
+    
+    try:
+        # Load data
+        patients = pd.read_csv(os.path.join(DATA_DIR, 'patients.csv'))
+        prescriptions = pd.read_csv(os.path.join(DATA_DIR, 'prescriptions.csv'))
+        
+        # Convert dates
+        prescriptions['last_filled_date'] = pd.to_datetime(prescriptions['last_filled_date'])
+        patients['dob'] = pd.to_datetime(patients['dob'])
+        
+        # 1. Monthly prescription trends
+        prescriptions['month'] = prescriptions['last_filled_date'].dt.to_period('M')
+        monthly_trend = prescriptions.groupby('month').size().tail(12)
+        trend_data = {
+            'labels': [str(m) for m in monthly_trend.index],
+            'values': monthly_trend.values.tolist()
+        }
+        
+        # 2. Top medications
+        top_meds = prescriptions['medication_name'].value_counts().head(8)
+        meds_data = {
+            'labels': top_meds.index.tolist(),
+            'values': top_meds.values.tolist()
+        }
+        
+        # 3. Age distribution
+        patients['age'] = (datetime.now() - patients['dob']).dt.days // 365
+        age_bins = [0, 18, 30, 45, 60, 75, 100]
+        age_labels = ['0-18', '19-30', '31-45', '46-60', '61-75', '76+']
+        patients['age_group'] = pd.cut(patients['age'], bins=age_bins, labels=age_labels)
+        age_counts = patients['age_group'].value_counts().sort_index()
+        age_data = {
+            'labels': age_counts.index.tolist(),
+            'values': age_counts.values.tolist()
+        }
+        
+        # 4. Insurance providers
+        insurance = patients['insurance_provider'].value_counts().head(6)
+        insurance_data = {
+            'labels': insurance.index.tolist(),
+            'values': insurance.values.tolist()
+        }
+        
+        # 5. Gender distribution
+        gender = patients['gender'].value_counts()
+        gender_data = {
+            'labels': gender.index.tolist(),
+            'values': gender.values.tolist()
+        }
+        
+        return {
+            'trend': trend_data,
+            'medications': meds_data,
+            'age': age_data,
+            'insurance': insurance_data,
+            'gender': gender_data
+        }
+    except Exception as e:
+        logger.error(f"Failed to get dashboard charts: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---------------------------
 # CHAT SESSIONS
 # ---------------------------

@@ -182,7 +182,7 @@ class InputGuard:
         sql_threats = self._check_sql_injection(user_input)
         if sql_threats:
             threats.extend(sql_threats)
-            if threat_level.value < ThreatLevel.HIGH.value:
+            if threat_level not in (ThreatLevel.HIGH, ThreatLevel.CRITICAL):
                 threat_level = ThreatLevel.HIGH
             warning_message = "Your query contains potentially dangerous SQL patterns."
             logger.warning(f"SQL injection pattern detected: {user_input[:100]}...")

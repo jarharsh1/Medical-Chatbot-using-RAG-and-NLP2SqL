@@ -361,6 +361,36 @@
     font-size: 0.875rem;
 }
 
+/* --- Desktop Sidebar Toggle --- */
+.desktop-sidebar-toggle {
+    display: flex;
+    position: absolute;
+    top: 1rem;
+    right: -0.75rem;
+    z-index: 46;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #0f172a;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.desktop-sidebar-toggle:hover {
+    background: #1e293b;
+    color: #e2e2e2;
+    transform: scale(1.1);
+}
+
+.chat-sidebar.collapsed + .gpt-chat-main .desktop-sidebar-toggle {
+    right: 0.5rem;
+}
+
 /* --- Main Chat Area (ChatGPT style) --- */
 .gpt-chat-main {
     flex: 1;
@@ -368,7 +398,7 @@
     min-height: 0;          /* allow flex child to shrink below content size */
     display: flex;
     flex-direction: column;
-    background: #ffffff;
+    background: #1a1a1a;
     overflow: hidden;
 }
 
@@ -422,20 +452,20 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.875rem;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: #262626;
+    border: 1px solid #404040;
     border-radius: 0.75rem;
     font-size: 0.8125rem;
-    color: #475569;
+    color: #d4d4d4;
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
 }
 
 .nb-suggestion-chip:hover {
-    background: #f8fafc;
-    border-color: var(--teal-300);
-    color: var(--teal-700);
+    background: #404040;
+    border-color: var(--teal-500);
+    color: var(--teal-400);
 }
 
 /* --- Message Row (full-width, content centered) --- */
@@ -445,7 +475,7 @@
 }
 
 .gpt-msg-row.user-row {
-    background: #f9fafb;
+    background: #262626;
 }
 
 .gpt-msg-content {
@@ -491,7 +521,7 @@
     min-width: 0;
     font-size: 0.9375rem;
     line-height: 1.7;
-    color: #1e293b;
+    color: #e2e8f0;
 }
 
 .gpt-msg-body .msg-meta {
@@ -510,8 +540,8 @@
 .gpt-input-area {
     padding: 0.75rem 1.5rem 1rem;
     flex-shrink: 0;
-    background: #ffffff;
-    border-top: 1px solid #f1f5f9;
+    background: #1a1a1a;
+    border-top: 1px solid #333;
 }
 
 .gpt-input-form {
@@ -523,17 +553,17 @@
     display: flex;
     align-items: center;
     width: 100%;
-    background: #ffffff;
-    border: 1px solid #d1d5db;
+    background: #262626;
+    border: 1px solid #404040;
     border-radius: 1.5rem;
     padding: 0.25rem 0.25rem 0.25rem 1.25rem;
     transition: all 0.2s ease;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+    box-shadow: 0 1px 6px rgba(0,0,0,0.3);
 }
 
 .gpt-input-wrapper:focus-within {
-    border-color: var(--teal-400);
-    box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.1), 0 1px 6px rgba(0,0,0,0.05);
+    border-color: var(--teal-500);
+    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.2), 0 1px 6px rgba(0,0,0,0.3);
 }
 
 .gpt-input {
@@ -542,19 +572,19 @@
     border: none;
     outline: none;
     font-size: 0.9375rem;
-    color: #1e293b;
+    color: #e5e5e5;
     padding: 0.625rem 0;
 }
 
 .gpt-input::placeholder {
-    color: #9ca3af;
+    color: #737373;
 }
 
 .gpt-send-btn {
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: #0f172a;
+    background: var(--teal-600);
     color: white;
     border: none;
     cursor: pointer;
@@ -567,7 +597,7 @@
 }
 
 .gpt-send-btn:hover {
-    background: #1e293b;
+    background: var(--teal-500);
 }
 
 /* --- Query Type Badges --- */

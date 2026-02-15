@@ -36,7 +36,7 @@
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen">
 
     <!-- Navbar -->
-    <nav class="bg-slate-900 text-white shadow-md sticky top-0 z-50 border-b border-slate-800">
+    <nav class="bg-slate-900 text-white shadow-md fixed top-0 left-0 right-0 z-50 border-b border-slate-800">
         <div class="w-full px-6 h-14 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <div class="bg-teal-700 p-2 rounded-lg">
@@ -61,7 +61,7 @@
         </div>
     </nav>
 
-    <main class="w-full px-6 py-8">
+    <main class="w-full px-6 py-8" style="padding-top: 5rem;">
 
         <!-- ================================ -->
         <!-- DASHBOARD SECTION               -->
@@ -290,6 +290,11 @@
     <!-- ================================ -->
     <div id="query-section" class="hidden">
         <div class="chat-layout">
+            <!-- Desktop sidebar toggle button -->
+            <button id="desktop-sidebar-toggle" onclick="toggleSidebar()" class="desktop-sidebar-toggle" title="Toggle chat history">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+
             <!-- Mobile sidebar toggle -->
             <button id="sidebar-toggle" onclick="toggleSidebar()" class="sidebar-toggle-btn" title="Toggle chat history">
                 <i class="fa-solid fa-clock-rotate-left"></i>

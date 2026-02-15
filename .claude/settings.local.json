@@ -14,7 +14,11 @@
       "Bash(powershell -Command \"Start-Sleep -Seconds 15; Invoke-RestMethod -Uri ''http://localhost:8000/api/health''\")",
       "Bash(python3:*)",
       "Bash(python -m backend.app:*)",
-      "Bash(cmd //c \"taskkill /PID 27408 /F\")"
+      "Bash(cmd //c \"taskkill /PID 27408 /F\")",
+      "Bash(python:*)",
+      "Bash(powershell:*)",
+      "Bash(timeout:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

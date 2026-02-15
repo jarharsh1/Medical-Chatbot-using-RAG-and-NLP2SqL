@@ -1008,13 +1008,13 @@ function renderChartInBubble(chartData, containerId) {
                 legend: {
                     display: chartData.chart_type === 'doughnut',
                     position: 'bottom',
-                    labels: { font: { size: 10 }, padding: 12, usePointStyle: true },
+                    labels: { font: { size: 10 }, padding: 12, usePointStyle: true, color: '#cbd5e1' },
                 },
                 title: {
                     display: true, text: chartData.title || '',
-                    font: { size: 12, weight: '600' }, color: '#1e293b', padding: { bottom: 8 },
+                    font: { size: 12, weight: '600' }, color: '#e2e8f0', padding: { bottom: 8 },
                 },
-                tooltip: { backgroundColor: '#1e293b', cornerRadius: 6 },
+                tooltip: { backgroundColor: '#334155', cornerRadius: 6 },
             },
         },
     };
@@ -1023,9 +1023,17 @@ function renderChartInBubble(chartData, containerId) {
         config.options.cutout = '55%';
     } else {
         config.options.scales = {
-            y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } } },
-            x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45 } },
+            y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { font: { size: 10 }, color: '#94a3b8' } },
+            x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45, color: '#94a3b8' } },
         };
+    }
+
+    // Update dataset colors for dark mode
+    if (chartData.datasets && chartData.datasets[0]) {
+        const colors = ['#14b8a6', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
+              '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#0d9488', '#f43f5e'];
+        chartData.datasets[0].backgroundColor = chartData.datasets[0].backgroundColor || colors.slice(0, chartData.labels.length);
+        chartData.datasets[0].borderColor = 'transparent';
     }
 
     new Chart(canvas, config);
@@ -1065,7 +1073,7 @@ function addAIMessage(data) {
     if (data.chart_data) {
         _chatChartCounter++;
         chartContainerId = `chat-chart-${_chatChartCounter}`;
-        chartHtml = `<div id="${chartContainerId}" class="mt-3 mb-2 p-3 bg-slate-50 rounded-lg border border-slate-100" style="height:240px;"></div>`;
+        chartHtml = `<div id="${chartContainerId}" class="mt-3 mb-2 p-3 bg-slate-800 rounded-lg border border-slate-700" style="height:240px;"></div>`;
     }
 
     row.innerHTML = `
