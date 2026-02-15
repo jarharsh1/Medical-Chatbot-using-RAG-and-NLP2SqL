@@ -13,6 +13,7 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime, timedelta
+from time import time as _time
 from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
@@ -100,6 +101,16 @@ def init_db():
             last_filled_date TEXT,
             status TEXT,
             FOREIGN KEY(patient_id) REFERENCES patients(patient_id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+            session_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            message_count INTEGER DEFAULT 0
         )
     """)
 
@@ -341,6 +352,7 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
             "sources": [],
             "grounding": None,
             "clarification": None,
+            "chart_data": result.get("chart_data"),
             "error": result.get("error"),
             "metadata": {
                 "run_id": run_id,
@@ -483,6 +495,7 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
             "sources": formatted_sources,
             "grounding": grounding_response,
             "clarification": None,
+            "chart_data": result.get("chart_data"),
             "hybrid_mode": result.get("hybrid_mode"),
             "error": result.get("error"),
             "metadata": {
@@ -658,13 +671,267 @@ def rag_metrics_summary():
 
 @app.get("/api/rag/metrics/{run_id}")
 def rag_metrics_by_run(run_id: str):
-    """Get detailed RAG metrics for a specific request."""
+    """
+    Get metrics for a specific run.
+    """
     from backend.rag.metrics import get_metrics_collector
     collector = get_metrics_collector()
-    metrics = collector.get_by_run_id(run_id)
-    if metrics is None:
-        raise HTTPException(404, f"No metrics found for run_id: {run_id}")
-    return metrics.to_dict()
+    return collector.get_by_run_id(run_id)
+
+
+@app.post("/api/chart/generate")
+def generate_chart(req: dict):
+    """
+    Generate a chart on-demand based on user request.
+    
+    Request body:
+        - chart_type: Type of chart (prescriptions_trend, gender_distribution, etc.)
+        - custom_data: Optional custom data for dynamic charts
+    
+    Returns:
+        - chart_url: URL to access the generated chart image
+    """
+    from backend.services.visualization import generate_chart, detect_chart_request
+    
+    chart_type = req.get('chart_type')
+    user_query = req.get('user_query', '')
+    custom_data = req.get('custom_data')
+    
+    # Auto-detect chart type from query if not provided
+    if not chart_type and user_query:
+        chart_type = detect_chart_request(user_query)
+    
+    if not chart_type:
+        raise HTTPException(status_code=400, detail="Chart type not specified")
+    
+    try:
+        # Generate the chart
+        filepath = generate_chart(chart_type, custom_data)
+        
+        # Return the URL path (frontend will access via /static/charts/...)
+        filename = os.path.basename(filepath)
+        chart_url = f"/static/charts/{filename}"
+        
+        return {
+            "success": True,
+            "chart_url": chart_url,
+            "chart_type": chart_type,
+            "message": f"Generated {chart_type} chart"
+        }
+    except Exception as e:
+        logger.error(f"Chart generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate chart: {str(e)}")
+
+
+# ---------------------------
+# CHAT SESSIONS
+# ---------------------------
+class CreateSessionRequest(BaseModel):
+    session_id: str
+    title: Optional[str] = "New Chat"
+
+
+class RenameSessionRequest(BaseModel):
+    title: str
+
+
+def _ensure_session(session_id: str, title: str = "New Chat"):
+    """Create a session row if it doesn't already exist."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM chat_sessions WHERE session_id = ?", [session_id])
+    if not cur.fetchone():
+        now = _time()
+        cur.execute(
+            "INSERT INTO chat_sessions (session_id, title, created_at, updated_at, message_count) VALUES (?,?,?,?,0)",
+            [session_id, title[:50], now, now],
+        )
+        conn.commit()
+    conn.close()
+
+
+def _bump_session(session_id: str):
+    """Increment message_count and touch updated_at."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE chat_sessions SET message_count = message_count + 1, updated_at = ? WHERE session_id = ?",
+        [_time(), session_id],
+    )
+    conn.commit()
+    conn.close()
+
+
+@app.get("/api/sessions")
+def list_sessions():
+    """List all chat sessions, newest first."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT session_id, title, created_at, updated_at, message_count FROM chat_sessions ORDER BY updated_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/sessions")
+def create_session(req: CreateSessionRequest):
+    """Create a new chat session."""
+    _ensure_session(req.session_id, req.title or "New Chat")
+    return {"status": "ok", "session_id": req.session_id}
+
+
+@app.get("/api/sessions/{session_id}/messages")
+def get_session_messages(session_id: str):
+    """Reconstruct messages for a session from the runs table."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    # Check if runs table exists
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    if "runs" not in tables:
+        conn.close()
+        return []
+
+    rows = conn.execute(
+        """SELECT question, query_type, result_json, created_at
+           FROM runs WHERE session_id = ? ORDER BY created_at ASC""",
+        [session_id],
+    ).fetchall()
+    conn.close()
+
+    import json
+    messages = []
+    for r in rows:
+        messages.append({"role": "user", "content": r["question"], "timestamp": r["created_at"]})
+        try:
+            result = json.loads(r["result_json"]) if r["result_json"] else {}
+        except (json.JSONDecodeError, TypeError):
+            result = {}
+        messages.append({
+            "role": "assistant",
+            "content": result.get("answer", ""),
+            "query_type": r["query_type"],
+            "sql_generated": result.get("sql_generated"),
+            "confidence": result.get("confidence"),
+            "sources": result.get("sources"),
+            "decomposition": result.get("decomposition"),
+            "hybrid_mode": result.get("hybrid_mode"),
+            "chart_data": result.get("chart_data"),
+            "timestamp": r["created_at"],
+        })
+    return messages
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str):
+    """Delete a chat session and its runs."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM chat_sessions WHERE session_id = ?", [session_id])
+    # Also clean up runs for this session
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    if "runs" in tables:
+        conn.execute("DELETE FROM runs WHERE session_id = ?", [session_id])
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+
+@app.patch("/api/sessions/{session_id}")
+def rename_session(session_id: str, req: RenameSessionRequest):
+    """Rename a chat session."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE session_id = ?",
+        [req.title[:50], _time(), session_id],
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+
+# ---------------------------
+# DASHBOARD CHARTS API
+# ---------------------------
+@app.get("/api/charts/dashboard")
+def dashboard_charts():
+    """Return pre-computed chart data for the dashboard from materialized views or raw tables."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    charts = {}
+
+    # Check which tables exist
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+
+    # Conditions doughnut (from mv_condition_stats or clinical_notes)
+    try:
+        if "mv_condition_stats" in tables:
+            rows = conn.execute("SELECT condition_name, patient_count FROM mv_condition_stats ORDER BY patient_count DESC LIMIT 8").fetchall()
+        else:
+            rows = conn.execute("SELECT condition_name, COUNT(DISTINCT patient_id) as cnt FROM clinical_notes GROUP BY condition_name ORDER BY cnt DESC LIMIT 8").fetchall()
+        charts["conditions"] = {
+            "chart_type": "doughnut",
+            "title": "Top Conditions",
+            "labels": [r[0] for r in rows],
+            "datasets": [{"data": [r[1] for r in rows], "backgroundColor": ['#0d9488','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'], "borderWidth": 0}],
+        }
+    except Exception:
+        pass
+
+    # Clinics bar (from mv_clinic_stats or clinics join)
+    try:
+        if "mv_clinic_stats" in tables:
+            rows = conn.execute("SELECT clinic_name, patient_count FROM mv_clinic_stats ORDER BY patient_count DESC LIMIT 10").fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT c.name, COUNT(DISTINCT p.patient_id) as cnt
+                FROM clinics c JOIN patients p ON c.clinic_id = p.clinic_id
+                GROUP BY c.name ORDER BY cnt DESC LIMIT 10
+            """).fetchall()
+        charts["clinics"] = {
+            "chart_type": "bar",
+            "title": "Patients per Clinic",
+            "labels": [r[0] for r in rows],
+            "datasets": [{"label": "Patients", "data": [r[1] for r in rows], "backgroundColor": "#0d9488", "borderRadius": 4}],
+        }
+    except Exception:
+        pass
+
+    # Top medications bar
+    try:
+        if "mv_medication_stats" in tables:
+            rows = conn.execute("SELECT medication_name, prescription_count FROM mv_medication_stats ORDER BY prescription_count DESC LIMIT 10").fetchall()
+        else:
+            rows = conn.execute("SELECT medication_name, COUNT(*) as cnt FROM prescriptions GROUP BY medication_name ORDER BY cnt DESC LIMIT 10").fetchall()
+        charts["medications"] = {
+            "chart_type": "bar",
+            "title": "Top Medications",
+            "labels": [r[0] for r in rows],
+            "datasets": [{"label": "Prescriptions", "data": [r[1] for r in rows], "backgroundColor": "#3b82f6", "borderRadius": 4}],
+        }
+    except Exception:
+        pass
+
+    # Daily trend line (visits per month)
+    try:
+        rows = conn.execute("""
+            SELECT strftime('%Y-%m', visit_date) as month, COUNT(*) as cnt
+            FROM clinical_notes
+            WHERE visit_date IS NOT NULL
+            GROUP BY month ORDER BY month
+        """).fetchall()
+        if rows:
+            charts["daily_trend"] = {
+                "chart_type": "line",
+                "title": "Visits per Month",
+                "labels": [r[0] for r in rows],
+                "datasets": [{"label": "Visits", "data": [r[1] for r in rows], "borderColor": "#0d9488", "backgroundColor": "rgba(13,148,136,0.1)", "fill": True, "tension": 0.3}],
+            }
+    except Exception:
+        pass
+
+    conn.close()
+    return charts
 
 
 @app.get("/api/filters")
@@ -863,6 +1130,10 @@ def query_ai(req: QueryRequest):
     if not question:
         raise HTTPException(400, "Question required")
 
+    # Auto-create session on first query
+    if req.session_id:
+        _ensure_session(req.session_id, question[:50])
+
     try:
         response = _process_query(
             question=question,
@@ -889,6 +1160,13 @@ def query_ai(req: QueryRequest):
             )
         except Exception as log_err:
             logger.warning(f"Failed to log run: {log_err}")
+
+        # Bump session message count
+        if req.session_id:
+            try:
+                _bump_session(req.session_id)
+            except Exception:
+                pass
 
         return response
 
@@ -1079,6 +1357,7 @@ def serve_frontend():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
+app.mount("/static", StaticFiles(directory=os.path.join(PROJECT_ROOT, "static")), name="static")
 app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 

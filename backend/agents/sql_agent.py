@@ -196,13 +196,117 @@ def generate_and_execute(
             logger.warning(f"SQL answer formatting failed: {e}")
             nl_answer = query_result
 
+    # Detect chart-worthy data from raw result
+    chart_data = _detect_chart_data(question, sql_query, query_result)
+
     elapsed = int((time.time() - start) * 1000)
 
     return {
         "sql_query": sql_query,
         "query_result": nl_answer,
         "raw_result": query_result,
+        "chart_data": chart_data,
         "error": error,
         "iterations": iterations,
         "generation_time_ms": elapsed,
     }
+
+
+def _detect_chart_data(
+    question: str, sql_query: str, raw_result: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """
+    Parse raw SQL result and detect if it's chart-worthy.
+
+    Returns a Chart.js-compatible spec or None.
+    Heuristics:
+      - 2-column results (label, numeric) → chart
+      - <=6 categories → doughnut, >6 → bar
+      - Date-like first column → line chart
+    """
+    if not raw_result or raw_result in ("[]", "", "No matching records found. Try simplifying your query."):
+        return None
+
+    try:
+        import ast
+        parsed = ast.literal_eval(raw_result)
+    except Exception:
+        return None
+
+    if not isinstance(parsed, list) or len(parsed) < 2:
+        return None
+
+    # Check for 2-column tuples
+    first = parsed[0]
+    if not isinstance(first, (list, tuple)) or len(first) != 2:
+        return None
+
+    labels = []
+    values = []
+    for row in parsed:
+        if not isinstance(row, (list, tuple)) or len(row) != 2:
+            return None
+        label, val = row
+        if label is None:
+            label = "Unknown"
+        try:
+            numeric_val = float(val)
+        except (TypeError, ValueError):
+            return None
+        labels.append(str(label))
+        values.append(numeric_val)
+
+    # Determine chart type
+    date_pattern = re.compile(r"^\d{4}-\d{2}")
+    is_date = all(date_pattern.match(str(l)) for l in labels)
+
+    if is_date:
+        chart_type = "line"
+    elif len(labels) <= 6:
+        chart_type = "doughnut"
+    else:
+        chart_type = "bar"
+
+    # Color palette
+    colors = ['#0d9488', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
+              '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#e11d48']
+
+    title = question[:60]
+
+    if chart_type == "doughnut":
+        return {
+            "chart_type": "doughnut",
+            "title": title,
+            "labels": labels,
+            "datasets": [{
+                "data": values,
+                "backgroundColor": colors[:len(labels)],
+                "borderWidth": 0,
+            }],
+        }
+    elif chart_type == "line":
+        return {
+            "chart_type": "line",
+            "title": title,
+            "labels": labels,
+            "datasets": [{
+                "label": "Count",
+                "data": values,
+                "borderColor": "#0d9488",
+                "backgroundColor": "rgba(13,148,136,0.1)",
+                "fill": True,
+                "tension": 0.3,
+            }],
+        }
+    else:  # bar
+        return {
+            "chart_type": "bar",
+            "title": title,
+            "labels": labels,
+            "datasets": [{
+                "label": "Count",
+                "data": values,
+                "backgroundColor": colors[:len(labels)],
+                "borderRadius": 4,
+            }],
+        }

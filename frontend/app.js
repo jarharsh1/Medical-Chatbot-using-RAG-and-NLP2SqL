@@ -4,8 +4,12 @@ const API_URL = "/api";
 let currentFilters = { clinic: '', doctor: '', condition: '', search: '', from_date: '', to_date: '' };
 let currentPage = 1;
 const pageSize = 50;
-const sessionId = crypto.randomUUID();
+let sessionId = crypto.randomUUID();
 let currentRows = [];
+
+// Dashboard Chart.js instances
+let donutChart = null;
+let fulfillmentBarChart = null;
 
 // --- UTILITY ---
 function debounce(fn, delay) {
@@ -54,6 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('query-form').addEventListener('submit', handleQuerySubmit);
+
+    // Sidebar init
+    _restoreSidebarState();
+    loadSessions();
 });
 
 // --- TABS (2 tabs) ---
@@ -70,6 +78,7 @@ function switchTab(tab) {
             btn.classList.remove('active');
         }
     });
+    if (tab === 'query') loadSessions();
 }
 
 // --- DASHBOARD ---
@@ -367,12 +376,90 @@ function openViewModal(index) {
     modalContainer.classList.remove('hidden');
 }
 
+// --- Dashboard Chart.js Init ---
+function initDashboardCharts() {
+    // Doughnut chart
+    const donutCtx = document.getElementById('donut-chart-canvas');
+    if (donutCtx && !donutChart) {
+        donutChart = new Chart(donutCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['At Risk', 'Due Soon', 'Active'],
+                datasets: [{
+                    data: [0, 0, 0],
+                    backgroundColor: ['#ef4444', '#f59e0b', '#10b981'],
+                    borderWidth: 0,
+                    hoverOffset: 6,
+                }]
+            },
+            options: {
+                cutout: '62%',
+                responsive: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1e293b',
+                        titleFont: { size: 12, weight: '600' },
+                        bodyFont: { size: 11 },
+                        padding: 10,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: (ctx) => ` ${ctx.label}: ${ctx.raw} prescriptions`
+                        }
+                    }
+                },
+                animation: { animateRotate: true, duration: 800 }
+            }
+        });
+    }
+
+    // Fulfillment bar chart
+    const barCtx = document.getElementById('fulfillment-bar-canvas');
+    if (barCtx && !fulfillmentBarChart) {
+        fulfillmentBarChart = new Chart(barCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Secured', 'Opportunity'],
+                datasets: [{
+                    data: [0, 0],
+                    backgroundColor: ['#10b981', '#cbd5e1'],
+                    borderRadius: 6,
+                    barPercentage: 0.5,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1e293b',
+                        callbacks: {
+                            label: (ctx) => ` $${ctx.raw.toLocaleString()}`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f1f5f9' },
+                        ticks: { font: { size: 10 }, color: '#94a3b8' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11, weight: '500' }, color: '#64748b' }
+                    }
+                }
+            }
+        });
+    }
+}
+
 // --- KPI: Use backend kpis when available (always use distinct counts) ---
 function updateMetrics(data, kpis) {
     let totalRx = 0, uniquePatients = 0, riskRx = 0, dueRx = 0, activeRx = 0;
 
     if (kpis) {
-        // Use backend-calculated distinct counts
         totalRx = kpis.total_rows || 0;
         uniquePatients = kpis.unique_patients || 0;
         activeRx = kpis.active_rx || 0;
@@ -380,11 +467,8 @@ function updateMetrics(data, kpis) {
         riskRx = expiredRx;
         dueRx = totalRx - activeRx - expiredRx;
     } else {
-        // Calculate distinct counts from page data as fallback
         uniquePatients = new Set(data.map(r => r.patient_id)).size;
         totalRx = new Set(data.map(r => r.rx_id || r.patient_id + '_' + r.medication + '_' + r.dosage)).size;
-        
-        // Count distinct prescriptions per status
         const statusCounts = {};
         data.forEach(r => {
             const status = r.status;
@@ -392,48 +476,48 @@ function updateMetrics(data, kpis) {
             if (!statusCounts[status]) statusCounts[status] = new Set();
             statusCounts[status].add(key);
         });
-        
-        riskRx = (statusCounts['Non-Adherent'] || new Set()).size + 
-                 (statusCounts['Renewal Needed'] || new Set()).size + 
+        riskRx = (statusCounts['Non-Adherent'] || new Set()).size +
+                 (statusCounts['Renewal Needed'] || new Set()).size +
                  (statusCounts['Not Purchased'] || new Set()).size;
         dueRx = (statusCounts['Refill Due'] || new Set()).size;
         activeRx = (statusCounts['Good'] || new Set()).size;
     }
 
-    // Update KPI cards with distinct counts
+    // Update KPI cards
     animateValue("total-rx", 0, totalRx, 400);
     animateValue("total-patients", 0, uniquePatients, 400);
     animateValue("count-risk", 0, riskRx, 400);
     animateValue("count-due", 0, dueRx, 400);
     animateValue("count-active", 0, activeRx, 400);
 
-    // Update legend and donut chart with distinct counts
+    // Update legend text
     document.getElementById('legend-risk').textContent = riskRx;
     document.getElementById('legend-due').textContent = dueRx;
     document.getElementById('legend-active').textContent = activeRx;
     document.getElementById('donut-total').textContent = totalRx;
 
+    // Initialize Chart.js instances if needed
+    initDashboardCharts();
+
+    // Update doughnut chart
+    if (donutChart) {
+        donutChart.data.datasets[0].data = [riskRx, dueRx, activeRx];
+        donutChart.update();
+    }
+
+    // Update fulfillment bar + progress bar
     const total = totalRx || 1;
-    const riskPct = (riskRx / total) * 100;
-    const duePct = (dueRx / total) * 100;
-    const donut = document.getElementById('donut-chart');
-
-    donut.style.background = totalRx === 0
-        ? `conic-gradient(#e2e8f0 0% 100%)`
-        : `conic-gradient(#ef4444 0% ${riskPct}%, #f59e0b ${riskPct}% ${riskPct + duePct}%, #10b981 ${riskPct + duePct}% 100%)`;
-
     const fulfillPct = Math.round((activeRx / total) * 100);
     document.getElementById('fulfill-rate').textContent = `${fulfillPct}%`;
     document.getElementById('fulfill-bar').style.width = `${fulfillPct}%`;
 
     const secured = (activeRx + dueRx) * 45;
     const lostRev = riskRx * 45;
-    const maxRev = Math.max(secured, lostRev, 1);
 
-    document.getElementById('bar-secured').style.height = `${(secured / maxRev) * 100}%`;
-    document.getElementById('bar-lost').style.height = `${(lostRev / maxRev) * 100}%`;
-    document.getElementById('rev-secured').textContent = `${secured.toLocaleString()}`;
-    document.getElementById('rev-lost').textContent = `${lostRev.toLocaleString()}`;
+    if (fulfillmentBarChart) {
+        fulfillmentBarChart.data.datasets[0].data = [secured, lostRev];
+        fulfillmentBarChart.update();
+    }
 }
 
 function animateValue(id, start, end, duration) {
@@ -638,53 +722,179 @@ function fillQuery(text) {
     input.focus();
 }
 
-function clearChat() {
-    const history = document.getElementById('chat-history');
-    history.innerHTML = `
-        <div id="nb-welcome" class="nb-welcome">
-            <div class="nb-welcome-icon">
-                <i class="fa-solid fa-heart-pulse text-teal-600 text-3xl"></i>
-            </div>
-            <h2 class="text-xl font-bold text-slate-800 mt-4">Ask MediGraph</h2>
-            <p class="text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
-                Ask questions about patients, prescriptions, clinical notes, or medical knowledge.
-                Everything runs locally — your data never leaves this machine.
-            </p>
-            <div class="nb-suggestions">
-                <button onclick="fillQuery('How many active prescriptions are there?')" class="nb-suggestion-chip">
-                    <i class="fa-solid fa-database text-blue-500 text-[10px]"></i>
-                    How many active prescriptions?
-                </button>
-                <button onclick="fillQuery('What symptoms are described for diabetic patients?')" class="nb-suggestion-chip">
-                    <i class="fa-solid fa-book-open text-purple-500 text-[10px]"></i>
-                    Symptoms for diabetic patients?
-                </button>
-                <button onclick="fillQuery('Which clinic has the most diabetes patients? Who are the doctors there?')" class="nb-suggestion-chip">
-                    <i class="fa-solid fa-code-merge text-amber-500 text-[10px]"></i>
-                    Top diabetes clinic & doctors?
-                </button>
-                <button onclick="fillQuery('What is the root cause of hypertension? How many patients have it?')" class="nb-suggestion-chip">
-                    <i class="fa-solid fa-sitemap text-emerald-500 text-[10px]"></i>
-                    Causes & count of hypertension?
-                </button>
-                <button onclick="fillQuery('List all patients with non-adherent prescriptions')" class="nb-suggestion-chip">
-                    <i class="fa-solid fa-triangle-exclamation text-red-400 text-[10px]"></i>
-                    Non-adherent prescriptions?
-                </button>
-                <button onclick="fillQuery('What medications are commonly prescribed for asthma?')" class="nb-suggestion-chip">
-                    <i class="fa-solid fa-pills text-teal-500 text-[10px]"></i>
-                    Medications for asthma?
-                </button>
-            </div>
-            <div class="flex items-center justify-center gap-4 mt-6 text-[11px] text-slate-400">
-                <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield-check text-emerald-400"></i> HIPAA Compliant</span>
-                <span class="text-slate-300">&middot;</span>
-                <span class="flex items-center gap-1.5"><i class="fa-solid fa-server text-slate-400"></i> Local Processing</span>
-                <span class="text-slate-300">&middot;</span>
-                <span class="flex items-center gap-1.5"><i class="fa-solid fa-brain text-teal-400"></i> RAG + SQL</span>
-            </div>
+// =========================================
+// SESSION MANAGEMENT
+// =========================================
+const WELCOME_HTML = `
+    <div id="nb-welcome" class="nb-welcome">
+        <div class="nb-welcome-icon">
+            <i class="fa-solid fa-heart-pulse text-teal-600 text-3xl"></i>
         </div>
-    `;
+        <h2 class="text-xl font-bold text-slate-800 mt-4">Ask MediGraph</h2>
+        <p class="text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+            Ask questions about patients, prescriptions, clinical notes, or medical knowledge.
+            Everything runs locally — your data never leaves this machine.
+        </p>
+        <div class="nb-suggestions">
+            <button onclick="fillQuery('How many active prescriptions are there?')" class="nb-suggestion-chip">
+                <i class="fa-solid fa-database text-blue-500 text-[10px]"></i>
+                How many active prescriptions?
+            </button>
+            <button onclick="fillQuery('What symptoms are described for diabetic patients?')" class="nb-suggestion-chip">
+                <i class="fa-solid fa-book-open text-purple-500 text-[10px]"></i>
+                Symptoms for diabetic patients?
+            </button>
+            <button onclick="fillQuery('Which clinic has the most diabetes patients? Who are the doctors there?')" class="nb-suggestion-chip">
+                <i class="fa-solid fa-code-merge text-amber-500 text-[10px]"></i>
+                Top diabetes clinic & doctors?
+            </button>
+            <button onclick="fillQuery('What is the root cause of hypertension? How many patients have it?')" class="nb-suggestion-chip">
+                <i class="fa-solid fa-sitemap text-emerald-500 text-[10px]"></i>
+                Causes & count of hypertension?
+            </button>
+            <button onclick="fillQuery('List all patients with non-adherent prescriptions')" class="nb-suggestion-chip">
+                <i class="fa-solid fa-triangle-exclamation text-red-400 text-[10px]"></i>
+                Non-adherent prescriptions?
+            </button>
+            <button onclick="fillQuery('What medications are commonly prescribed for asthma?')" class="nb-suggestion-chip">
+                <i class="fa-solid fa-pills text-teal-500 text-[10px]"></i>
+                Medications for asthma?
+            </button>
+        </div>
+        <div class="flex items-center justify-center gap-4 mt-6 text-[11px] text-slate-400">
+            <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield-check text-emerald-400"></i> HIPAA Compliant</span>
+            <span class="text-slate-300">&middot;</span>
+            <span class="flex items-center gap-1.5"><i class="fa-solid fa-server text-slate-400"></i> Local Processing</span>
+            <span class="text-slate-300">&middot;</span>
+            <span class="flex items-center gap-1.5"><i class="fa-solid fa-brain text-teal-400"></i> RAG + SQL</span>
+        </div>
+    </div>
+`;
+
+function clearChat() {
+    document.getElementById('chat-history').innerHTML = WELCOME_HTML;
+}
+
+function startNewChat() {
+    sessionId = crypto.randomUUID();
+    clearChat();
+    renderSessionList(window._sessions || []);
+}
+
+async function loadSessions() {
+    try {
+        const res = await fetch(`${API_URL}/sessions`);
+        const sessions = await res.json();
+        window._sessions = sessions;
+        renderSessionList(sessions);
+    } catch (e) {
+        console.error('Failed to load sessions:', e);
+    }
+}
+
+function renderSessionList(sessions) {
+    const list = document.getElementById('session-list');
+    if (!list) return;
+
+    if (!sessions || sessions.length === 0) {
+        list.innerHTML = '<div class="text-xs text-slate-500 text-center py-8">No conversations yet</div>';
+        return;
+    }
+
+    list.innerHTML = sessions.map(s => {
+        const isActive = s.session_id === sessionId;
+        const timeStr = _formatSessionTime(s.updated_at);
+        return `
+            <div class="session-item ${isActive ? 'active' : ''}" onclick="switchSession('${s.session_id}')">
+                <div class="session-item-icon">
+                    <i class="fa-solid fa-message"></i>
+                </div>
+                <div class="session-item-text">
+                    <div class="session-item-title">${escapeHtml(s.title)}</div>
+                    <div class="session-item-meta">${timeStr} &middot; ${s.message_count} msg</div>
+                </div>
+                <button class="session-item-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')" title="Delete">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function _formatSessionTime(epoch) {
+    if (!epoch) return '';
+    const d = new Date(epoch * 1000);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+async function switchSession(id) {
+    if (id === sessionId) return;
+    sessionId = id;
+    clearChat();
+    renderSessionList(window._sessions || []);
+
+    try {
+        const res = await fetch(`${API_URL}/sessions/${id}/messages`);
+        const messages = await res.json();
+        if (!messages || messages.length === 0) return;
+
+        hideWelcome();
+        for (const msg of messages) {
+            if (msg.role === 'user') {
+                addMessage('user', msg.content);
+            } else {
+                addAIMessage({
+                    answer: msg.content,
+                    query_type: msg.query_type,
+                    sql_generated: msg.sql_generated,
+                    confidence: msg.confidence,
+                    sources: msg.sources,
+                    decomposition: msg.decomposition,
+                    hybrid_mode: msg.hybrid_mode,
+                    chart_data: msg.chart_data,
+                });
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load session messages:', e);
+    }
+}
+
+async function deleteSession(id) {
+    try {
+        await fetch(`${API_URL}/sessions/${id}`, { method: 'DELETE' });
+        if (id === sessionId) startNewChat();
+        loadSessions();
+    } catch (e) {
+        console.error('Failed to delete session:', e);
+    }
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('chat-sidebar');
+    if (!sidebar) return;
+    // Mobile: toggle open class
+    if (window.innerWidth <= 768) {
+        sidebar.classList.toggle('open');
+    } else {
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed'));
+    }
+}
+
+// Restore sidebar state on load
+function _restoreSidebarState() {
+    const collapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+    if (collapsed) {
+        const sidebar = document.getElementById('chat-sidebar');
+        if (sidebar) sidebar.classList.add('collapsed');
+    }
 }
 
 async function handleQuerySubmit(e) {
@@ -708,6 +918,7 @@ async function handleQuerySubmit(e) {
         const data = await res.json();
         loading.classList.add('hidden');
         addAIMessage(data);
+        loadSessions();
     } catch (e) {
         loading.classList.add('hidden');
         addMessage('error', 'Could not reach the backend. Is the server running?');
@@ -762,13 +973,11 @@ function renderSources(sources) {
     `).join('');
 
     return `
-        <div class="mt-3 pt-3 border-t border-slate-100">
-            <button onclick="this.nextElementSibling.classList.toggle('hidden')"
-                class="text-xs text-slate-500 font-medium flex items-center gap-1 hover:text-teal-600 mb-2">
-                <i class="fa-solid fa-book-open"></i> Sources (${toShow.length})
-                <i class="fa-solid fa-chevron-down text-[8px] ml-1"></i>
-            </button>
-            <div class="hidden space-y-2">${cards}</div>
+        <div class="mt-4 pt-3 border-t border-slate-200">
+            <div class="text-xs text-slate-500 font-semibold flex items-center gap-1.5 mb-2">
+                <i class="fa-solid fa-book-open text-teal-600"></i> Sources (${toShow.length})
+            </div>
+            <div class="space-y-2">${cards}</div>
         </div>
     `;
 }
@@ -778,17 +987,60 @@ function hideWelcome() {
     if (welcome) welcome.remove();
 }
 
+// --- Chart rendering in chat ---
+let _chatChartCounter = 0;
+
+function renderChartInBubble(chartData, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container || !chartData) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.height = chartData.chart_type === 'doughnut' ? 220 : 200;
+    container.appendChild(canvas);
+
+    const config = {
+        type: chartData.chart_type,
+        data: { labels: chartData.labels, datasets: chartData.datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: chartData.chart_type === 'doughnut',
+                    position: 'bottom',
+                    labels: { font: { size: 10 }, padding: 12, usePointStyle: true },
+                },
+                title: {
+                    display: true, text: chartData.title || '',
+                    font: { size: 12, weight: '600' }, color: '#1e293b', padding: { bottom: 8 },
+                },
+                tooltip: { backgroundColor: '#1e293b', cornerRadius: 6 },
+            },
+        },
+    };
+
+    if (chartData.chart_type === 'doughnut') {
+        config.options.cutout = '55%';
+    } else {
+        config.options.scales = {
+            y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } } },
+            x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45 } },
+        };
+    }
+
+    new Chart(canvas, config);
+}
+
 function addAIMessage(data) {
     const history = document.getElementById('chat-history');
-    const div = document.createElement('div');
-    div.className = "nb-msg nb-msg-ai";
+    const row = document.createElement('div');
+    row.className = 'gpt-msg-row';
 
     const badge = getQueryTypeBadge(data.query_type);
     const confidence = getConfidenceMeter(data.confidence);
     const sources = renderSources(data.sources);
     const answer = data.answer || data.result || '';
     const sql = data.sql_generated;
-    const timestamp = formatTimestamp();
 
     let decompositionHtml = '';
     if (data.decomposition && data.decomposition.parts_count > 1) {
@@ -808,56 +1060,68 @@ function addAIMessage(data) {
         `;
     }
 
-    div.innerHTML = `
-        <div class="nb-ai-avatar-sm">
-            <i class="fa-solid fa-sparkles text-white text-[10px]"></i>
-        </div>
-        <div class="nb-bubble" style="max-width: 85%;">
-            <div class="flex items-center gap-2 mb-3">
-                ${badge}
-                ${data.hybrid_mode ? `<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full uppercase font-medium">${escapeHtml(data.hybrid_mode)}</span>` : ''}
+    let chartHtml = '';
+    let chartContainerId = null;
+    if (data.chart_data) {
+        _chatChartCounter++;
+        chartContainerId = `chat-chart-${_chatChartCounter}`;
+        chartHtml = `<div id="${chartContainerId}" class="mt-3 mb-2 p-3 bg-slate-50 rounded-lg border border-slate-100" style="height:240px;"></div>`;
+    }
+
+    row.innerHTML = `
+        <div class="gpt-msg-content gpt-msg-ai">
+            <div class="gpt-avatar"><i class="fa-solid fa-sparkles text-white text-[10px]"></i></div>
+            <div class="gpt-msg-body">
+                <div class="msg-meta">
+                    ${badge}
+                    ${data.hybrid_mode ? `<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full uppercase font-medium">${escapeHtml(data.hybrid_mode)}</span>` : ''}
+                </div>
+                ${decompositionHtml}
+                ${sql ? `<div class="sql-block mb-3"><span class="comment">// Generated SQL</span><br>${escapeHtml(sql)}</div>` : ''}
+                <div class="prose prose-sm max-w-none prose-slate prose-headings:font-semibold prose-p:text-slate-700 prose-strong:text-slate-800 prose-li:marker:text-teal-500">${marked.parse(answer || '')}</div>
+                ${chartHtml}
+                ${sources}
+                ${confidence}
             </div>
-            ${decompositionHtml}
-            ${sql ? `<div class="sql-block mb-3"><span class="comment">// Generated SQL</span><br>${escapeHtml(sql)}</div>` : ''}
-            <div class="prose prose-sm max-w-none prose-slate prose-headings:text-slate-800 prose-headings:font-semibold prose-p:text-slate-700 prose-strong:text-slate-800 prose-ul:text-slate-700 prose-ol:text-slate-700 prose-li:marker:text-teal-500">${marked.parse(answer || '')}</div>
-            ${sources}
-            ${confidence}
-            <div class="nb-timestamp">${timestamp}</div>
         </div>
     `;
 
-    history.appendChild(div);
+    history.appendChild(row);
     history.scrollTop = history.scrollHeight;
+
+    if (chartContainerId && data.chart_data) {
+        requestAnimationFrame(() => renderChartInBubble(data.chart_data, chartContainerId));
+    }
 }
 
 function addMessage(type, content) {
     hideWelcome();
     const history = document.getElementById('chat-history');
-    const div = document.createElement('div');
-    const timestamp = formatTimestamp();
+    const row = document.createElement('div');
 
     if (type === 'user') {
-        div.className = 'nb-msg nb-msg-user';
-        div.innerHTML = `
-            <div class="nb-user-avatar">You</div>
-            <div>
-                <div class="nb-bubble">${escapeHtml(content)}</div>
-                <div class="nb-timestamp" style="text-align: right;">${timestamp}</div>
+        row.className = 'gpt-msg-row user-row';
+        row.innerHTML = `
+            <div class="gpt-msg-content">
+                <div class="gpt-user-avatar">You</div>
+                <div class="gpt-msg-body" style="color: #1e293b; font-weight: 500;">
+                    ${escapeHtml(content)}
+                </div>
             </div>
         `;
     } else if (type === 'error') {
-        div.className = 'nb-msg nb-msg-ai';
-        div.innerHTML = `
-            <div class="nb-ai-avatar-sm">
-                <i class="fa-solid fa-sparkles text-white text-[10px]"></i>
-            </div>
-            <div class="nb-bubble" style="background: #fef2f2; border-color: #fecaca; color: #dc2626;">
-                <i class="fa-solid fa-triangle-exclamation mr-2"></i>${escapeHtml(content)}
+        row.className = 'gpt-msg-row';
+        row.innerHTML = `
+            <div class="gpt-msg-content gpt-msg-ai">
+                <div class="gpt-avatar" style="background: #ef4444;"><i class="fa-solid fa-triangle-exclamation text-white text-[10px]"></i></div>
+                <div class="gpt-msg-body" style="color: #dc2626;">
+                    <i class="fa-solid fa-triangle-exclamation mr-1"></i>${escapeHtml(content)}
+                </div>
             </div>
         `;
     }
 
-    history.appendChild(div);
+    history.appendChild(row);
     history.scrollTop = history.scrollHeight;
 }
 
