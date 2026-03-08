@@ -19,9 +19,13 @@ chroma_db/
 venv/
 env/
 
-# Evaluation artifacts (generated, not committed)
+# Evaluation (run locally only, not in CI)
 evaluation/eval_report.json
 evaluation/baseline_metrics.json
+evaluation/__pycache__/
+
+# CI workflow (disabled — evaluation runs locally only)
+.github/
 
 # IDE
 .vscode/
