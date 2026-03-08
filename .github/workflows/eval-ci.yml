@@ -13,7 +13,7 @@ env:
 jobs:
   evaluate:
     runs-on: self-hosted
-    timeout-minutes: 180  # vectorstore build ~30min + 50 tests ~90min
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -23,7 +23,6 @@ jobs:
 
       - name: Ensure Ollama is running
         run: |
-          # Start Ollama if not already running (no-op if already up)
           ollama list || (ollama serve &>/dev/null & sleep 5)
           echo "Models available:"
           ollama list
@@ -32,37 +31,25 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Generate test data
+      - name: Copy database and ChromaDB from local project
         run: |
-          python scripts/generate_data.py
-
-      - name: Initialize database from CSV files
-        run: |
-          PYTHONPATH=. python scripts/init_db.py
+          SRC="C:/Users/Harsh Raj/OneDrive/Projects/Medical-Chatbot-using-RAG-and-NLP2SqL/backend"
+          # Copy SQLite DB (includes indexed_notes — prevents re-embedding)
+          cp "$SRC/medical_records.db" backend/medical_records.db
+          echo "Copied medical_records.db ($(du -sh backend/medical_records.db | cut -f1))"
+          # Copy ChromaDB (pre-built embeddings)
+          cp -r "$SRC/chroma_db" backend/chroma_db
+          echo "Copied chroma_db ($(du -sh backend/chroma_db | cut -f1))"
 
       - name: Run database optimization (indexes + materialized views)
         run: |
           PYTHONPATH=. python backend/scripts/optimize_database.py
-
-      - name: Copy ChromaDB index from local machine
-        run: |
-          CHROMA_SRC="C:/Users/Harsh Raj/OneDrive/Projects/Medical-Chatbot-using-RAG-and-NLP2SqL/backend/chroma_db"
-          CHROMA_DST="backend/chroma_db"
-          if [ -d "$CHROMA_SRC" ]; then
-            echo "Copying existing ChromaDB from $CHROMA_SRC"
-            cp -r "$CHROMA_SRC" "$CHROMA_DST"
-            echo "Done."
-          else
-            echo "WARNING: No existing ChromaDB found, building from scratch (slow)"
-            PYTHONPATH=. python scripts/build_vectorstore.py
-          fi
 
       - name: Run evaluation
         env:
           LLM_MODEL: llama3.1:8b
         shell: powershell
         run: |
-          # Run at BelowNormal priority so runner worker keeps sending heartbeats
           $proc = Start-Process python -ArgumentList "-m", "evaluation.evaluate" `
             -WorkingDirectory $PWD -PassThru -NoNewWindow `
             -RedirectStandardOutput "eval_stdout.txt" -RedirectStandardError "eval_stderr.txt"
