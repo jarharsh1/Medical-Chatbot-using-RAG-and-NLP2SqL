@@ -14,6 +14,9 @@ jobs:
   evaluate:
     runs-on: self-hosted
     timeout-minutes: 90   # local machine: model already downloaded, ~1-2 min per test
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v4
