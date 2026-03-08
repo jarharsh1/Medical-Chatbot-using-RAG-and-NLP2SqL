@@ -13,7 +13,7 @@ env:
 jobs:
   evaluate:
     runs-on: self-hosted
-    timeout-minutes: 90   # local machine: model already downloaded, ~1-2 min per test
+    timeout-minutes: 180  # vectorstore build ~30min + 50 tests ~90min
     defaults:
       run:
         shell: bash
@@ -43,6 +43,15 @@ jobs:
       - name: Run database optimization (indexes + materialized views)
         run: |
           PYTHONPATH=. python backend/scripts/optimize_database.py
+
+      - name: Build RAG vector index (ChromaDB)
+        run: |
+          PYTHONPATH=. python -c "
+from backend.rag.vectorstore import populate_vectorstore
+print('Building ChromaDB index...')
+populate_vectorstore()
+print('ChromaDB index ready.')
+"
 
       - name: Run evaluation
         env:
