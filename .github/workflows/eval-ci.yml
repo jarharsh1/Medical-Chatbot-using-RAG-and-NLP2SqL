@@ -6,9 +6,14 @@ on:
   push:
     branches: [main]
 
+env:
+  LLM_MODEL: qwen2.5:14b
+  EMBED_MODEL: nomic-embed-text
+
 jobs:
   evaluate:
     runs-on: ubuntu-latest
+    timeout-minutes: 360   # qwen2.5:14b on CPU takes ~4-5 min per test x 50 tests
 
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +23,24 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Add swap space for qwen2.5:14b (~9GB model)
+        run: |
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "Memory after swap:"
+          free -h
+
       - name: Install Ollama
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
           ollama serve &
-          sleep 5
-          ollama pull llama3.2
+          sleep 10
+          ollama pull qwen2.5:14b
           ollama pull nomic-embed-text
+          echo "Models ready:"
+          ollama list
 
       - name: Install dependencies
         run: |
@@ -34,7 +50,13 @@ jobs:
         run: |
           python scripts/generate_data.py
 
+      - name: Run database optimization (indexes + materialized views)
+        run: |
+          PYTHONPATH=. python backend/scripts/optimize_database.py
+
       - name: Run evaluation
+        env:
+          LLM_MODEL: qwen2.5:14b
         run: |
           python -m evaluation.evaluate
 
@@ -44,3 +66,10 @@ jobs:
         with:
           name: eval-report
           path: evaluation/eval_report.json
+
+      - name: Upload baseline metrics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-metrics
+          path: evaluation/baseline_metrics.json
