@@ -170,7 +170,10 @@ def generate_and_execute(
                         "  prescriptions: rx_id, patient_id, medication_name, dosage, days_supply, refills_remaining, last_filled_date, status\n"
                         "  clinics: clinic_id, name, location\n"
                         "doctor_name is in clinical_notes, NOT patients. "
-                        "condition_name and diagnosis_code are in clinical_notes, NOT prescriptions."
+                        "condition_name and diagnosis_code are in clinical_notes, NOT prescriptions.\n"
+                        "CRITICAL: full_name is ONLY in patients table. To use p.full_name you MUST "
+                        "define the alias: FROM patients p (or JOIN patients p ON ...). "
+                        "Never reference an alias that is not explicitly defined in FROM/JOIN."
                     )
                 else:
                     error = msg

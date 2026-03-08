@@ -347,52 +347,52 @@
     {
         "id": 41,
         "question": "What is the meaning of life?",
-        "expected_type": "rag",
+        "expected_type": "knowledge",
         "expected_supporting_note_ids": [],
         "expected_key_phrases": [],
-        "expected_answer_contains": ["don't have enough information", "cannot"],
-        "expected_refusal": true,
-        "tags": ["unanswerable"]
+        "expected_answer_contains": ["general knowledge"],
+        "expected_refusal": false,
+        "tags": ["out_of_scope", "knowledge"]
     },
     {
         "id": 42,
         "question": "What is the weather today?",
-        "expected_type": "rag",
+        "expected_type": "knowledge",
         "expected_supporting_note_ids": [],
         "expected_key_phrases": [],
-        "expected_answer_contains": ["don't have enough information", "cannot"],
-        "expected_refusal": true,
-        "tags": ["unanswerable"]
+        "expected_answer_contains": ["general knowledge"],
+        "expected_refusal": false,
+        "tags": ["out_of_scope", "knowledge"]
     },
     {
         "id": 43,
         "question": "Tell me about COVID-19 vaccines approved in 2025",
-        "expected_type": "rag",
+        "expected_type": "knowledge",
         "expected_supporting_note_ids": [],
         "expected_key_phrases": [],
-        "expected_answer_contains": ["don't have enough information"],
-        "expected_refusal": true,
-        "tags": ["unanswerable"]
+        "expected_answer_contains": ["general knowledge"],
+        "expected_refusal": false,
+        "tags": ["out_of_scope", "knowledge"]
     },
     {
         "id": 44,
         "question": "What are the stock prices of pharmaceutical companies?",
-        "expected_type": "rag",
+        "expected_type": "knowledge",
         "expected_supporting_note_ids": [],
         "expected_key_phrases": [],
-        "expected_answer_contains": ["don't have enough information"],
-        "expected_refusal": true,
-        "tags": ["unanswerable"]
+        "expected_answer_contains": ["general knowledge"],
+        "expected_refusal": false,
+        "tags": ["out_of_scope", "knowledge"]
     },
     {
         "id": 45,
         "question": "Who will win the next election?",
-        "expected_type": "rag",
+        "expected_type": "knowledge",
         "expected_supporting_note_ids": [],
         "expected_key_phrases": [],
-        "expected_answer_contains": ["don't have enough information"],
-        "expected_refusal": true,
-        "tags": ["unanswerable"]
+        "expected_answer_contains": ["general knowledge"],
+        "expected_refusal": false,
+        "tags": ["out_of_scope", "knowledge"]
     },
     {
         "id": 46,

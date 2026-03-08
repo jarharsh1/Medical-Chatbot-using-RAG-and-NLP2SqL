@@ -78,18 +78,48 @@ def print_report(metrics: Dict[str, Any], results: List[Dict]):
             f"{r['question'][:40]}"
         )
 
-    # Failed tests detail
+    # Detailed test results (all tests: expected vs actual)
+    print("\n" + "-" * 70)
+    print("  DETAILED TEST RESULTS (Expected vs Actual)")
+    print("-" * 70)
+    for r in results:
+        correct_mark = "PASS" if r.get("is_correct") else "FAIL"
+        print(f"\n  [{correct_mark}] Test {r['test_id']}: {r['question']}")
+        print(f"    Route:    expected={r.get('expected_type', '?')}, actual={r.get('actual_type', '?')}")
+
+        # Expected output
+        expected_parts = []
+        if r.get("expected_sql_contains"):
+            expected_parts.append(f"SQL keywords: {r['expected_sql_contains']}")
+        if r.get("expected_answer_contains"):
+            expected_parts.append(f"Answer phrases: {r['expected_answer_contains']}")
+        if r.get("expected_refusal"):
+            expected_parts.append("Should refuse (out-of-scope)")
+        if r.get("expected_no_injection"):
+            expected_parts.append("Should block injection")
+        if not expected_parts:
+            expected_parts.append("Any valid answer (no specific constraints)")
+        print(f"    Expected: {'; '.join(expected_parts)}")
+
+        # Actual output
+        if r.get("error"):
+            print(f"    Actual:   ERROR — {r['error'][:120]}")
+        elif r.get("answer"):
+            print(f"    Actual:   {r['answer'][:150]}")
+        else:
+            print(f"    Actual:   (empty)")
+
+        if r.get("sql_generated"):
+            print(f"    SQL:      {r['sql_generated'][:120]}")
+
+    # Failed tests summary
     failed = [r for r in results if not r.get("is_correct")]
     if failed:
         print("\n" + "-" * 70)
-        print(f"  FAILED TESTS ({len(failed)})")
+        print(f"  FAILED TESTS SUMMARY ({len(failed)})")
         print("-" * 70)
         for r in failed:
-            print(f"\n  Test {r['test_id']}: {r['question'][:60]}")
-            if r.get("error"):
-                print(f"    Error: {r['error'][:100]}")
-            if r.get("answer"):
-                print(f"    Answer: {r['answer'][:100]}")
+            print(f"  - Test {r['test_id']}: {r['question'][:60]}")
 
     print("\n" + "=" * 70)
     print()
@@ -121,6 +151,14 @@ def save_json_report(metrics: Dict, results: List[Dict], path: str):
                 "elapsed_ms": r.get("elapsed_ms"),
                 "error": r.get("error"),
                 "tags": r.get("tags", []),
+                # Expected output
+                "expected_sql_contains": r.get("expected_sql_contains", []),
+                "expected_answer_contains": r.get("expected_answer_contains", []),
+                "expected_refusal": r.get("expected_refusal", False),
+                "expected_no_injection": r.get("expected_no_injection", False),
+                # Actual output
+                "answer": (r.get("answer") or "")[:300],
+                "sql_generated": r.get("sql_generated"),
             }
             for r in results
         ],

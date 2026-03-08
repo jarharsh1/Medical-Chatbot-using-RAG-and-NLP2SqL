@@ -15,7 +15,7 @@ from backend.config import LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
-VALID_TYPES = {"sql", "rag", "hybrid"}
+VALID_TYPES = {"sql", "rag", "hybrid", "knowledge"}
 
 
 def classify_query(question: str) -> str:

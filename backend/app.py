@@ -172,14 +172,19 @@ init_db()
 # RAG INITIALIZATION (lazy, on first query)
 # ---------------------------
 _rag_initialized = False
+_rag_init_attempts = 0
+_MAX_RAG_INIT_ATTEMPTS = 3
 
 
 def _ensure_rag_ready():
-    """Initialize vector store and BM25 index once."""
-    global _rag_initialized
+    """Initialize vector store and BM25 index once (retries up to 3 times on failure)."""
+    global _rag_initialized, _rag_init_attempts
     if _rag_initialized:
         return
+    if _rag_init_attempts >= _MAX_RAG_INIT_ATTEMPTS:
+        return
 
+    _rag_init_attempts += 1
     try:
         from backend.rag.vectorstore import populate_vectorstore
         from backend.rag.bm25 import get_bm25_index
@@ -190,8 +195,9 @@ def _ensure_rag_ready():
         _rag_initialized = True
         logger.info("RAG pipeline ready.")
     except Exception as e:
-        logger.error(f"RAG initialization failed: {e}")
-        _rag_initialized = True  # don't retry on every request
+        logger.error(
+            f"RAG initialization failed (attempt {_rag_init_attempts}/{_MAX_RAG_INIT_ATTEMPTS}): {e}"
+        )
 
 
 # ---------------------------
@@ -436,6 +442,49 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
             result_cache.set(question, rag_response, ttl_override=7200)  # 2 hours
         return rag_response
 
+    elif query_type == "knowledge":
+        import time as _time_module
+        from langchain_core.messages import HumanMessage
+        from langchain_ollama import ChatOllama
+        from backend.config import LLM_MODEL
+        from backend.agents.prompts import KNOWLEDGE_PROMPT
+
+        t0 = _time_module.time()
+        try:
+            llm = ChatOllama(model=LLM_MODEL, temperature=0)
+            prompt = KNOWLEDGE_PROMPT.format(question=question)
+            response = llm.invoke([HumanMessage(content=prompt)])
+            answer = (response.content or "").strip()
+            gen_time = int((_time_module.time() - t0) * 1000)
+            error = None
+        except Exception as e:
+            answer = "Note: This answer is based on general knowledge, not our patient records.\n\nUnable to retrieve information at this time."
+            gen_time = 0
+            error = str(e)
+
+        if session_id:
+            get_conversation_memory().add_turn(
+                session_id, question, answer, query_type="knowledge",
+            )
+
+        knowledge_response = {
+            "query_type": "knowledge",
+            "answer": answer,
+            "result": answer,
+            "sql_generated": None,
+            "confidence": 0.7,
+            "sources": [],
+            "grounding": None,
+            "clarification": None,
+            "error": error,
+            "metadata": {
+                "run_id": run_id,
+                "generation_time_ms": gen_time,
+            },
+        }
+        result_cache.set(question, knowledge_response)
+        return knowledge_response
+
     else:  # hybrid
         result = run_hybrid(
             question=question,
@@ -458,7 +507,13 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
             llm_self_confidence=result.get("confidence", 0.5),
         )
 
-        if conf.get("disclaimer"):
+        # Refusal policy (same as RAG)
+        if should_refuse("hybrid", conf["score"], grounding):
+            answer = REFUSAL
+            if sources:
+                snippets = "\n".join(f"- {s.get('text_snippet', '')[:100]}" for s in sources[:3])
+                answer += f"\n\nClosest matches found:\n{snippets}"
+        elif conf.get("disclaimer"):
             answer += f"\n\n_{conf['disclaimer']}_"
 
         formatted_sources = format_sources(sources)

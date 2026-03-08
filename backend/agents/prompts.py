@@ -8,8 +8,13 @@ Given a user question, classify it into exactly one category:
 SQL - Questions about structured data answerable with database queries.
   Examples: counts, aggregations, filters on specific fields, listing patients by criteria.
   Indicators: "how many", "list all", "count of", "which clinic", "total prescriptions"
+  IMPORTANT: Questions asking for counts, distinct values, or aggregations over TABLE COLUMNS
+  (like condition_name, doctor_name, medication_name) are ALWAYS SQL, even when the question
+  mentions "clinical notes" as the source table. "clinical_notes" is a database table with
+  structured columns — when the question asks to count or aggregate those columns, use SQL.
+  Examples: "How many distinct conditions are in the clinical notes?" -> SQL (COUNT DISTINCT on condition_name column)
 
-RAG - Questions about the CONTENT of clinical notes requiring understanding medical text.
+RAG - Questions about the free-text CONTENT of clinical notes requiring reading and understanding the note_text.
   Examples: what symptoms are described, what treatments are mentioned, summarize patient history.
   Indicators: "what does the note say", "describe the treatment", "summarize", "clinical observations"
 
@@ -17,7 +22,13 @@ HYBRID - Questions needing BOTH structured data AND clinical note content.
   Examples: "What medications are prescribed for patients whose notes mention chest pain?"
   This requires RAG to find patients with "chest pain" in notes, then SQL to get their prescriptions.
 
-Return ONLY one word: SQL, RAG, or HYBRID
+KNOWLEDGE - Questions completely outside this medical patient database scope.
+  Examples: stock prices, financial data, current events, general medical science not in our records,
+  vaccine approvals, drug mechanisms, world news, anything unrelated to our patient/prescription/clinic data.
+  Indicators: no connection to patients, prescriptions, clinics, or clinical notes in our database.
+  Use KNOWLEDGE when the question cannot be answered from our records at all.
+
+Return ONLY one word: SQL, RAG, HYBRID, or KNOWLEDGE
 
 Question: {question}
 Category:"""
@@ -75,7 +86,15 @@ HARD RULES:
 12) When the question asks about a specific medication:
     - To find who takes it: WHERE prescriptions.medication_name LIKE '%MedName%'
     - To count prescriptions: COUNT(*) FROM prescriptions WHERE medication_name LIKE '%MedName%'
-    - To find what condition: JOIN clinical_notes ON patient_id to get condition_name."""
+    - To find what condition: JOIN clinical_notes ON patient_id to get condition_name.
+13) To return patient full_name: ALWAYS join the patients table explicitly with an alias.
+    NEVER use p.full_name without first defining FROM patients p or JOIN patients p ON ...
+    Example for "patients with both active and expired prescriptions":
+      SELECT p.full_name, p.patient_id
+      FROM patients p
+      WHERE EXISTS (SELECT 1 FROM prescriptions WHERE patient_id = p.patient_id AND status = 'Active')
+        AND EXISTS (SELECT 1 FROM prescriptions WHERE patient_id = p.patient_id AND status = 'Expired')
+      LIMIT 100"""
 
 SQL_USER_PROMPT = """Schema:
 {schema}
@@ -232,3 +251,20 @@ Combine these into a single coherent response that:
 5. Does NOT invent facts - only use what's in the provided answers
 
 Write a natural, helpful response."""
+
+# ---- GENERAL KNOWLEDGE (OUT-OF-SCOPE) ----
+KNOWLEDGE_PROMPT = """You are an assistant answering a question that falls outside our medical patient database.
+
+IMPORTANT RULES:
+1) Always begin your answer with exactly this line:
+   "Note: This answer is based on general knowledge, not our patient records."
+2) If the question involves real-time or current data (stock prices, live statistics, breaking news,
+   events after your training cutoff), explicitly state you cannot provide accurate current figures
+   and recommend a reliable up-to-date source (e.g. financial site, official health authority).
+3) If you are uncertain about specific facts, say so clearly. Do NOT guess or invent details.
+4) Be concise and factually accurate. Use established knowledge only.
+5) Do not fabricate statistics, prices, or dates you are not certain about.
+
+Question: {question}
+
+Answer:"""

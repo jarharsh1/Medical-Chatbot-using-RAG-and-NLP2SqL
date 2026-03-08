@@ -101,13 +101,9 @@ def _execute_sub_question(
 
     elif route == "knowledge":
         # For general knowledge questions, use LLM directly without RAG
+        from backend.agents.prompts import KNOWLEDGE_PROMPT
         llm = ChatOllama(model=LLM_MODEL, temperature=0)
-        prompt = f"""You are a medical knowledge assistant. Answer this medical question concisely and accurately.
-If you're not certain, say so. Do not invent facts.
-
-Question: {question}
-
-Provide a clear, factual answer based on established medical knowledge."""
+        prompt = KNOWLEDGE_PROMPT.format(question=question)
 
         try:
             t0 = time.time()
