@@ -1481,8 +1481,11 @@ def serve_frontend():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
-app.mount("/static", StaticFiles(directory=os.path.join(PROJECT_ROOT, "static")), name="static")
-app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+_static_dir = os.path.join(PROJECT_ROOT, "static")
+if os.path.exists(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 
 # ---------------------------
