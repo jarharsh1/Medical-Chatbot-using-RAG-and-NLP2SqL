@@ -12,34 +12,17 @@ env:
 
 jobs:
   evaluate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360   # qwen2.5:14b on CPU takes ~4-5 min per test x 50 tests
+    runs-on: self-hosted
+    timeout-minutes: 90   # local machine: model already downloaded, ~1-2 min per test
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Add swap space for qwen2.5:14b (~9GB model)
+      - name: Ensure Ollama is running
         run: |
-          sudo fallocate -l 12G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "Memory after swap:"
-          free -h
-
-      - name: Install Ollama
-        run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          ollama serve &
-          sleep 10
-          ollama pull qwen2.5:14b
-          ollama pull nomic-embed-text
-          echo "Models ready:"
+          # Start Ollama if not already running (no-op if already up)
+          ollama list || (ollama serve &>/dev/null & sleep 5)
+          echo "Models available:"
           ollama list
 
       - name: Install dependencies

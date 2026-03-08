@@ -1,7 +1,7 @@
 """
 Enrich clinical notes with realistic LLM-generated doctor observations.
 
-Uses Ollama (llama3.2) to generate authentic clinical narratives including:
+Uses Ollama (qwen2.5:14b) to generate authentic clinical narratives including:
 - Chief complaint / presenting symptoms
 - History of present illness (HPI)
 - Physical examination findings
@@ -21,6 +21,8 @@ from typing import Dict, List, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from tqdm import tqdm
+
+from backend.config import LLM_MODEL
 
 # Medical context for each condition to help the LLM
 CONDITION_CONTEXT: Dict[str, Dict] = {
@@ -191,7 +193,7 @@ def enrich_notes_with_llm(db_path: str, batch_size: int = 50, max_workers: int =
     conn.close()
 
     # Initialize LLM
-    llm = ChatOllama(model="llama3.2", temperature=0.7)  # Higher temp for variety
+    llm = ChatOllama(model=LLM_MODEL, temperature=0.7)  # Higher temp for variety
 
     # Process in batches
     updated = 0
@@ -279,7 +281,7 @@ def enrich_sample(db_path: str, sample_size: int = 100):
     patient_names = {row[0]: row[1] for row in cursor.fetchall()}
 
     # Initialize LLM
-    llm = ChatOllama(model="llama3.2", temperature=0.7)
+    llm = ChatOllama(model=LLM_MODEL, temperature=0.7)
 
     updated = 0
     for note_id, patient_id, condition, note_text, visit_date in tqdm(notes, desc="Generating notes"):
@@ -379,7 +381,7 @@ def enrich_percentage(db_path: str, percentage: int = 40):
     conn.close()
 
     # Initialize LLM
-    llm = ChatOllama(model="llama3.2", temperature=0.7)
+    llm = ChatOllama(model=LLM_MODEL, temperature=0.7)
 
     updated = 0
     failed = 0
@@ -498,7 +500,7 @@ if __name__ == "__main__":
     print("Clinical Notes LLM Enrichment Script")
     print("="*70)
     print(f"Database: {DB_PATH}")
-    print(f"Model: llama3.2 (via Ollama)")
+    print(f"Model: {LLM_MODEL} (via Ollama)")
     print("="*70)
 
     if args.verify:
