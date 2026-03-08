@@ -1491,7 +1491,26 @@ if os.path.exists(FRONTEND_DIR):
 # ---------------------------
 # MAIN
 # ---------------------------
+def _run_evaluation_if_needed():
+    """Run evaluation once on first launch (no baseline yet). Runs in background."""
+    import subprocess
+    import sys
+    baseline = os.path.join(PROJECT_ROOT, "evaluation", "baseline_metrics.json")
+    if not os.path.exists(baseline):
+        logger.info("No baseline metrics found — running evaluation in background (first launch)...")
+        subprocess.Popen(
+            [sys.executable, "-m", "evaluation.evaluate"],
+            cwd=PROJECT_ROOT,
+            stdout=open(os.path.join(PROJECT_ROOT, "evaluation", "eval_first_run.log"), "w"),
+            stderr=subprocess.STDOUT,
+        )
+        logger.info("Evaluation started. Check evaluation/eval_first_run.log for progress.")
+    else:
+        logger.info("Baseline metrics found — skipping evaluation.")
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    _run_evaluation_if_needed()
     print(f"\nServer running at: http://localhost:{SERVER_PORT}")
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)
