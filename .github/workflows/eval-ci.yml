@@ -36,6 +36,10 @@ jobs:
         run: |
           python scripts/generate_data.py
 
+      - name: Initialize database from CSV files
+        run: |
+          PYTHONPATH=. python -c "from backend.app import init_db; init_db()"
+
       - name: Run database optimization (indexes + materialized views)
         run: |
           PYTHONPATH=. python backend/scripts/optimize_database.py
