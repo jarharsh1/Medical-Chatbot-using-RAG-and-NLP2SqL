@@ -46,12 +46,7 @@ jobs:
 
       - name: Build RAG vector index (ChromaDB)
         run: |
-          PYTHONPATH=. python -c "
-from backend.rag.vectorstore import populate_vectorstore
-print('Building ChromaDB index...')
-populate_vectorstore()
-print('ChromaDB index ready.')
-"
+          PYTHONPATH=. python scripts/build_vectorstore.py
 
       - name: Run evaluation
         env:
