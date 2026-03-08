@@ -44,9 +44,18 @@ jobs:
         run: |
           PYTHONPATH=. python backend/scripts/optimize_database.py
 
-      - name: Build RAG vector index (ChromaDB)
+      - name: Copy ChromaDB index from local machine
         run: |
-          PYTHONPATH=. python scripts/build_vectorstore.py
+          CHROMA_SRC="C:/Users/Harsh Raj/OneDrive/Projects/Medical-Chatbot-using-RAG-and-NLP2SqL/backend/chroma_db"
+          CHROMA_DST="backend/chroma_db"
+          if [ -d "$CHROMA_SRC" ]; then
+            echo "Copying existing ChromaDB from $CHROMA_SRC"
+            cp -r "$CHROMA_SRC" "$CHROMA_DST"
+            echo "Done."
+          else
+            echo "WARNING: No existing ChromaDB found, building from scratch (slow)"
+            PYTHONPATH=. python scripts/build_vectorstore.py
+          fi
 
       - name: Run evaluation
         env:
