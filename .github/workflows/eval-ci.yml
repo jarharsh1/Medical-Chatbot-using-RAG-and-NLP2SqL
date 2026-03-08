@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  LLM_MODEL: qwen2.5:14b
+  LLM_MODEL: llama3.1:8b
   EMBED_MODEL: nomic-embed-text
 
 jobs:
@@ -59,7 +59,7 @@ jobs:
 
       - name: Run evaluation
         env:
-          LLM_MODEL: qwen2.5:14b
+          LLM_MODEL: llama3.1:8b
         run: |
           python -m evaluation.evaluate
 
