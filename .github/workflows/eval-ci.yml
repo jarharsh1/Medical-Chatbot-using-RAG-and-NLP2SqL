@@ -60,8 +60,17 @@ jobs:
       - name: Run evaluation
         env:
           LLM_MODEL: llama3.1:8b
+        shell: powershell
         run: |
-          python -m evaluation.evaluate
+          # Run at BelowNormal priority so runner worker keeps sending heartbeats
+          $proc = Start-Process python -ArgumentList "-m", "evaluation.evaluate" `
+            -WorkingDirectory $PWD -PassThru -NoNewWindow `
+            -RedirectStandardOutput "eval_stdout.txt" -RedirectStandardError "eval_stderr.txt"
+          $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+          $proc.WaitForExit()
+          Get-Content eval_stdout.txt
+          Get-Content eval_stderr.txt
+          exit $proc.ExitCode
 
       - name: Upload evaluation report
         if: always()
