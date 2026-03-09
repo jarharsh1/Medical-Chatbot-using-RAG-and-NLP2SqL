@@ -5,7 +5,7 @@ e<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediGraph Analytics</title>
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=9">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         tailwind.config = {
@@ -123,7 +123,7 @@ e<!DOCTYPE html>
                         <i class="fa-solid fa-prescription text-white text-sm"></i>
                     </div>
                     <div>
-                        <p class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Total Rx</p>
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider">Total Rx</p>
                         <p id="total-rx" class="text-lg font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
@@ -133,7 +133,7 @@ e<!DOCTYPE html>
                         <i class="fa-solid fa-users text-white text-sm"></i>
                     </div>
                     <div>
-                        <p class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Patients</p>
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider">Patients</p>
                         <p id="total-patients" class="text-lg font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
@@ -143,7 +143,7 @@ e<!DOCTYPE html>
                         <i class="fa-solid fa-triangle-exclamation text-white text-sm"></i>
                     </div>
                     <div>
-                        <p class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">At Risk</p>
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider">At Risk</p>
                         <p id="count-risk" class="text-lg font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
@@ -153,7 +153,7 @@ e<!DOCTYPE html>
                         <i class="fa-solid fa-clock text-white text-sm"></i>
                     </div>
                     <div>
-                        <p class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Due Soon</p>
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider">Due Soon</p>
                         <p id="count-due" class="text-lg font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
@@ -163,7 +163,7 @@ e<!DOCTYPE html>
                         <i class="fa-solid fa-circle-check text-white text-sm"></i>
                     </div>
                     <div>
-                        <p class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Active</p>
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider">Active</p>
                         <p id="count-active" class="text-lg font-bold text-slate-800 kpi-number">0</p>
                     </div>
                 </div>
@@ -177,7 +177,7 @@ e<!DOCTYPE html>
                     <div class="flex items-start justify-between mb-4">
                         <div>
                             <h3 class="text-sm font-semibold text-slate-800">Status Distribution</h3>
-                            <p class="text-[11px] text-slate-500 mt-0.5">Prescription status breakdown</p>
+                            <p class="text-xs text-slate-500 mt-0.5">Prescription status breakdown</p>
                         </div>
                         <div class="p-1.5 bg-slate-100 rounded-md">
                             <i class="fa-solid fa-chart-pie text-slate-500 text-xs"></i>
@@ -189,7 +189,7 @@ e<!DOCTYPE html>
                             <canvas id="donut-chart-canvas" width="140" height="140"></canvas>
                             <div class="donut-center-label">
                                 <span id="donut-total" class="text-2xl font-bold text-slate-800">0</span>
-                                <span class="text-[10px] text-slate-400 uppercase tracking-wider">Total</span>
+                                <span class="text-xs text-slate-400 uppercase tracking-wider">Total</span>
                             </div>
                         </div>
 
@@ -218,7 +218,7 @@ e<!DOCTYPE html>
                     <div class="flex items-start justify-between mb-4">
                         <div>
                             <h3 class="text-sm font-semibold text-slate-800">Fulfillment Rate</h3>
-                            <p class="text-[11px] text-slate-500 mt-0.5">Active prescriptions vs total</p>
+                            <p class="text-xs text-slate-500 mt-0.5">Active prescriptions vs total</p>
                         </div>
                         <div class="p-1.5 bg-slate-100 rounded-md">
                             <i class="fa-solid fa-chart-simple text-slate-500 text-xs"></i>
@@ -290,11 +290,6 @@ e<!DOCTYPE html>
     <!-- ================================ -->
     <div id="query-section" class="hidden">
         <div class="chat-layout">
-            <!-- Desktop sidebar toggle button -->
-            <button id="desktop-sidebar-toggle" onclick="toggleSidebar()" class="desktop-sidebar-toggle" title="Toggle chat history">
-                <i class="fa-solid fa-bars"></i>
-            </button>
-
             <!-- Mobile sidebar toggle -->
             <button id="sidebar-toggle" onclick="toggleSidebar()" class="sidebar-toggle-btn" title="Toggle chat history">
                 <i class="fa-solid fa-clock-rotate-left"></i>
@@ -316,14 +311,20 @@ e<!DOCTYPE html>
             <!-- Main Chat Area -->
             <div class="gpt-chat-main">
 
+                <!-- Desktop sidebar toggle — inside gpt-chat-main so position:absolute anchors correctly -->
+                <button id="desktop-sidebar-toggle" onclick="toggleSidebar()" class="desktop-sidebar-toggle" title="Toggle chat history">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+
+
                 <!-- Messages scroll area -->
-                <div id="chat-history" class="gpt-messages-scroll">
+                <div id="chat-history" class="gpt-messages-scroll" style="padding-top: 3.5rem;">
                     <div id="nb-welcome" class="nb-welcome">
                         <div class="nb-welcome-icon">
                             <i class="fa-solid fa-heart-pulse text-teal-600 text-3xl"></i>
                         </div>
-                        <h2 class="text-xl font-bold text-slate-800 mt-4">Ask MediGraph</h2>
-                        <p class="text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+                        <h2 class="text-xl font-bold text-white mt-4">Ask MediGraph</h2>
+                        <p class="text-sm text-slate-300 mt-1.5 max-w-md mx-auto leading-relaxed">
                             Ask questions about patients, prescriptions, clinical notes, or medical knowledge.
                             Everything runs locally — your data never leaves this machine.
                         </p>
@@ -355,7 +356,7 @@ e<!DOCTYPE html>
                             </button>
                         </div>
 
-                        <div class="flex items-center justify-center gap-4 mt-6 text-[11px] text-slate-400">
+                        <div class="flex items-center justify-center gap-4 mt-6 text-xs text-slate-400">
                             <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield-check text-emerald-400"></i> HIPAA Compliant</span>
                             <span class="text-slate-300">&middot;</span>
                             <span class="flex items-center gap-1.5"><i class="fa-solid fa-server text-slate-400"></i> Local Processing</span>
@@ -369,10 +370,10 @@ e<!DOCTYPE html>
                 <div id="chat-loading" class="hidden gpt-loading-area">
                     <div class="gpt-msg-row">
                         <div class="gpt-msg-content gpt-msg-ai">
-                            <div class="gpt-avatar"><i class="fa-solid fa-sparkles text-white text-[10px]"></i></div>
+                            <div class="gpt-avatar">🩺</div>
                             <div class="typing-indicator">
                                 <div class="typing-dots"><span></span><span></span><span></span></div>
-                                <span class="text-xs text-slate-400 ml-1">Thinking...</span>
+                                <span id="loading-stage-text" class="text-xs text-slate-400 ml-1">Classifying your query...</span>
                             </div>
                         </div>
                     </div>
@@ -382,15 +383,29 @@ e<!DOCTYPE html>
                 <div class="gpt-input-area">
                     <form id="query-form" class="gpt-input-form">
                         <div class="gpt-input-wrapper">
-                            <input type="text" id="query-input"
-                                placeholder="Ask anything about your medical data..."
-                                class="gpt-input"
-                                autocomplete="off">
-                            <button type="submit" class="gpt-send-btn" title="Send message">
-                                <i class="fa-solid fa-arrow-up"></i>
-                            </button>
+                            <!-- Model pill + dropdown (ChatGPT style) -->
+                            <div class="gpt-model-row">
+                                <div class="model-pill-container">
+                                    <button type="button" class="model-pill" id="model-pill-btn" onclick="toggleModelDropdown(event)">
+                                        <i class="fa-solid fa-microchip" style="font-size:9px;opacity:0.7"></i>
+                                        <span id="model-pill-name">Loading...</span>
+                                        <i class="fa-solid fa-chevron-down model-pill-chevron" id="model-pill-chevron"></i>
+                                    </button>
+                                    <div class="model-dropdown hidden" id="model-dropdown"></div>
+                                </div>
+                            </div>
+                            <!-- Textarea + send -->
+                            <div class="gpt-input-bottom">
+                                <textarea id="query-input" rows="1"
+                                    placeholder="Ask anything about your medical data..."
+                                    class="gpt-input"
+                                    autocomplete="off"></textarea>
+                                <button type="submit" class="gpt-send-btn" title="Send message">
+                                    <i class="fa-solid fa-arrow-up"></i>
+                                </button>
+                            </div>
                         </div>
-                        <p class="text-[10px] text-slate-400 text-center mt-2">MediGraph AI can make mistakes. Verify important medical information.</p>
+                        <p class="text-xs text-slate-500 text-center mt-2">MediGraph AI can make mistakes. Verify important medical information.</p>
                     </form>
                 </div>
             </div>
@@ -400,6 +415,7 @@ e<!DOCTYPE html>
     <!-- Clinical Note Modal (hidden by default) -->
     <div id="note-modal" class="hidden"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=9"></script>
 </body>
 </html>
+        

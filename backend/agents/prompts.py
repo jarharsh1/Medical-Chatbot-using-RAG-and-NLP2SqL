@@ -5,22 +5,30 @@ ROUTER_PROMPT = """You are a query classifier for a medical database system.
 
 Given a user question, classify it into exactly one category:
 
-SQL - Questions about structured data answerable with database queries.
+SQL - Questions about structured data answerable with database queries on specific fields.
   Examples: counts, aggregations, filters on specific fields, listing patients by criteria.
   Indicators: "how many", "list all", "count of", "which clinic", "total prescriptions"
   IMPORTANT: Questions asking for counts, distinct values, or aggregations over TABLE COLUMNS
   (like condition_name, doctor_name, medication_name) are ALWAYS SQL, even when the question
-  mentions "clinical notes" as the source table. "clinical_notes" is a database table with
-  structured columns — when the question asks to count or aggregate those columns, use SQL.
-  Examples: "How many distinct conditions are in the clinical notes?" -> SQL (COUNT DISTINCT on condition_name column)
+  mentions "clinical notes" as the source table.
+  Examples: "How many distinct conditions are in the clinical notes?" -> SQL
+            "How many patients have diabetes?" -> SQL
+            "Which clinic has the most patients?" -> SQL
 
 RAG - Questions about the free-text CONTENT of clinical notes requiring reading and understanding the note_text.
   Examples: what symptoms are described, what treatments are mentioned, summarize patient history.
   Indicators: "what does the note say", "describe the treatment", "summarize", "clinical observations"
+  Examples: "What symptoms are described for diabetic patients?" -> RAG
+            "Summarize the doctor's observations for asthma patients" -> RAG
 
-HYBRID - Questions needing BOTH structured data AND clinical note content.
-  Examples: "What medications are prescribed for patients whose notes mention chest pain?"
-  This requires RAG to find patients with "chest pain" in notes, then SQL to get their prescriptions.
+HYBRID - Questions needing BOTH structured data AND clinical note content, OR questions asking
+  what medications/treatments are used for a specific condition (requires matching condition to meds).
+  Examples: "What medications are commonly prescribed for asthma?" -> HYBRID
+            "What medications are prescribed for patients whose notes mention chest pain?" -> HYBRID
+            "What treatments are used for GERD patients?" -> HYBRID
+            "Which doctors treat the most diabetes patients and what do they prescribe?" -> HYBRID
+  Rule: "what medications/treatments for [condition]?" is ALWAYS HYBRID — it needs RAG to
+  identify condition mentions AND SQL/prescriptions to find linked medications.
 
 KNOWLEDGE - Questions completely outside this medical patient database scope.
   Examples: stock prices, financial data, current events, general medical science not in our records,
@@ -54,13 +62,21 @@ For aggregate queries (counts, "most common", "top N"), prefer these pre-compute
 - mv_clinic_stats: clinic_id, clinic_name, location, total_patients, total_notes, doctor_count, conditions_treated
   Example: "Which clinic has most patients?" -> SELECT clinic_name, total_patients FROM mv_clinic_stats ORDER BY total_patients DESC LIMIT 1
 - mv_doctor_stats: doctor_name, patients_seen, total_visits, conditions_treated, first_visit, last_visit
+  IMPORTANT: mv_doctor_stats has NO clinic_id and NO department_name column. Do NOT use these columns on it.
   Example: "Who is the busiest doctor?" -> SELECT doctor_name, patients_seen FROM mv_doctor_stats ORDER BY patients_seen DESC LIMIT 1
+  To filter doctors by clinic: JOIN clinical_notes cn ON cn.doctor_name = mv_doctor_stats.doctor_name JOIN patients p ON cn.patient_id = p.patient_id JOIN clinics cl ON p.clinic_id = cl.clinic_id WHERE cl.name = '...'
 - mv_medication_stats: medication_name, prescription_count, patient_count, active_count, avg_refills_remaining
   Example: "Most prescribed medication?" -> SELECT medication_name, prescription_count FROM mv_medication_stats ORDER BY prescription_count DESC LIMIT 1
 
 WHEN TO USE mv_* TABLES:
 - Use mv_* for: "how many patients with X", "most common", "top N", "busiest", "most prescribed"
 - Use base tables for: specific patient lookups, date ranges, complex JOINs, detailed records
+
+SCHEMA CONSTRAINTS (NEVER violate):
+- There is NO "department" column anywhere in the database. For "department-wise" questions, use condition_name from clinical_notes as the department proxy.
+- There is NO billing_amount, revenue, or profit column. Profitability cannot be measured; use visit count (COUNT(*)) as the best proxy.
+- mv_doctor_stats has ONLY: doctor_name, patients_seen, total_visits, conditions_treated, first_visit, last_visit — nothing else.
+- mv_clinic_stats has ONLY: clinic_id, clinic_name, location, total_patients, total_notes, doctor_count, conditions_treated.
 
 HARD RULES:
 1) Output ONLY the SQL query. No explanations. No markdown.
@@ -72,11 +88,18 @@ HARD RULES:
    - ORDER BY cnt DESC
    - LIMIT N
 5) prescriptions.status values are exactly 'Active' or 'Expired' (case-sensitive).
-6) Use LIKE with wildcards for text filters (e.g., condition_name LIKE '%Hypertension%').
+6) STRING COMPARISONS ARE CASE-SENSITIVE in SQLite for = operator.
+   ALWAYS use LOWER() on both sides for any string filter:
+   - CORRECT:   WHERE LOWER(condition_name) LIKE '%asthma%'
+   - CORRECT:   WHERE LOWER(condition_name) = 'asthma'
+   - WRONG:     WHERE condition_name = 'asthma'   ← returns 0 rows if data is 'Asthma'
+   - WRONG:     WHERE condition_name = 'Asthma'   ← fragile, breaks on different casing
+   Exception: prescriptions.status uses exact values 'Active' / 'Expired' (keep as-is).
    When filtering conditions/diseases, use the ROOT WORD to catch all variants:
-   - "thyroidism" → LIKE '%Thyroid%' (matches "Thyroid Cancer", "Thyroidism", etc.)
-   - "diabetes" → LIKE '%Diabet%' (matches "Diabetes", "Diabetic Neuropathy", etc.)
-   - "arthritis" → LIKE '%Arthr%' (matches "Arthritis", "Osteoarthritis", etc.)
+   - "asthma"      → WHERE LOWER(condition_name) LIKE '%asthma%'
+   - "thyroidism"  → WHERE LOWER(condition_name) LIKE '%thyroid%'
+   - "diabetes"    → WHERE LOWER(condition_name) LIKE '%diabet%'
+   - "arthritis"   → WHERE LOWER(condition_name) LIKE '%arthr%'
    Always prefer shorter root terms in LIKE filters to maximize recall.
 7) One statement only.
 8) Always include a LIMIT clause (default LIMIT 100 if not specified).

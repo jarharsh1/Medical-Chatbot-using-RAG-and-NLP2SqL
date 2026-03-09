@@ -18,13 +18,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 from backend.agents.prompts import SQL_SYSTEM_PROMPT, SQL_USER_PROMPT, SQL_ANSWER_PROMPT
-from backend.config import DB_URI, LLM_MODEL, MAX_SQL_RETRIES, SQL_BANNED_OPS
+from backend.config import DB_URI, get_active_model, MAX_SQL_RETRIES, SQL_BANNED_OPS
 
 logger = logging.getLogger(__name__)
 
-# Module-level DB and LLM
+# Module-level DB singleton
 _db = None
-_llm = None
 
 
 def _get_db() -> SQLDatabase:
@@ -35,10 +34,8 @@ def _get_db() -> SQLDatabase:
 
 
 def _get_llm():
-    global _llm
-    if _llm is None:
-        _llm = ChatOllama(model=LLM_MODEL, temperature=0)
-    return _llm
+    """Create LLM using the active model for the current thread."""
+    return ChatOllama(model=get_active_model(), temperature=0)
 
 
 def validate_sql(sql: str) -> Tuple[bool, str]:

@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -201,6 +201,42 @@ def _ensure_rag_ready():
 
 
 # ---------------------------
+# QUERY PREPROCESSING
+# ---------------------------
+_MEDICAL_CORRECTIONS = {
+    "aasthama": "asthma", "asthama": "asthma", "ashtma": "asthma", "ashtama": "asthma",
+    "diabeties": "diabetes", "diabetis": "diabetes", "diabeetus": "diabetes",
+    "hpertension": "hypertension", "hypertenshion": "hypertension",
+    "pnuemonia": "pneumonia", "pnemonia": "pneumonia", "pneumonea": "pneumonia",
+    "diareah": "diarrhea", "diarreah": "diarrhea", "diahrea": "diarrhea",
+    "colestrol": "cholesterol", "cholestrol": "cholesterol",
+    "arthritus": "arthritis", "artheritis": "arthritis",
+    "migrane": "migraine", "migrene": "migraine",
+    "ostophorosis": "osteoporosis", "osteoporsis": "osteoporosis",
+    "prescripion": "prescription", "presciption": "prescription",
+    "symtoms": "symptoms", "symptomes": "symptoms", "symtomes": "symptoms",
+    "inflamation": "inflammation", "inflamtion": "inflammation",
+}
+
+def _normalize_query(question: str) -> str:
+    """Correct common medical misspellings before routing and retrieval."""
+    import re
+    words = re.split(r'(\s+)', question)
+    corrected = []
+    for word in words:
+        lower = word.lower().rstrip('.,?!')
+        if lower in _MEDICAL_CORRECTIONS:
+            # preserve original punctuation/case style
+            replacement = _MEDICAL_CORRECTIONS[lower]
+            word = replacement + word[len(lower):]
+        corrected.append(word)
+    result = ''.join(corrected)
+    if result != question:
+        logger.info(f"Query normalized: '{question}' → '{result}'")
+    return result
+
+
+# ---------------------------
 # QUERY PROCESSING
 # ---------------------------
 def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str, Any]:
@@ -231,6 +267,9 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
     from backend.security.input_guard import check_input, ThreatLevel
 
     run_id = str(uuid.uuid4())
+
+    # Normalize medical misspellings before routing/retrieval
+    question = _normalize_query(question)
 
     # Security check - validate input before processing
     security_result = check_input(question, client_id=session_id)
@@ -326,15 +365,42 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
     query_type = classify_query(question)
     logger.info(f"[{run_id}] Query type: {query_type} — '{question[:80]}'")
 
+    # Query rewriting (improves downstream retrieval and SQL generation)
+    from backend.agents.query_rewriter import apply_rule_based_rewrites, rewrite_for_sql
+    if query_type == "sql":
+        rewritten_q = rewrite_for_sql(question)
+    else:
+        # Rule-based only for RAG/hybrid (no extra LLM call)
+        rewritten_q = apply_rule_based_rewrites(question)
+    if rewritten_q != question:
+        logger.info(f"[{run_id}] Query rewritten: '{question[:60]}' → '{rewritten_q[:60]}'")
+
     # Execute based on route
     if query_type == "sql":
         result = generate_and_execute(
-            question=question,
+            question=rewritten_q,
             conversation_context=conversation_context,
             few_shot_examples=few_shot_examples,
         )
         answer = result.get("query_result") or ""
-        if not answer or answer == "[]":
+        _sql_empty = not answer or answer in ("[]", "No matching records found. Try simplifying your query.")
+
+        # Fallback: SQL returned empty → retry as hybrid (condition-medication questions often need RAG)
+        if _sql_empty and not result.get("error"):
+            logger.info(f"[{run_id}] SQL returned empty — falling back to hybrid for: '{question[:60]}'")
+            fallback = run_hybrid(
+                question=rewritten_q,
+                conversation_context=conversation_context,
+            )
+            fallback_answer = (fallback.get("answer") or "").strip()
+            if fallback_answer and len(fallback_answer) > 30:
+                fallback["query_type"] = "hybrid"
+                fallback["metadata"] = fallback.get("metadata", {})
+                fallback["metadata"]["run_id"] = run_id
+                fallback["metadata"]["sql_fallback"] = True
+                return fallback
+
+        if _sql_empty:
             answer = "No matching records found. Try simplifying your query."
 
         conf = compute_confidence(query_type="sql", llm_self_confidence=1.0 if not result.get("error") else 0.0)
@@ -374,7 +440,7 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
 
     elif query_type == "rag":
         result = retrieve_and_generate(
-            question=question,
+            question=rewritten_q,
             conversation_context=conversation_context,
         )
         answer = result.get("answer", "")
@@ -392,14 +458,15 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
             llm_self_confidence=result.get("llm_self_confidence", 0.5),
         )
 
-        # Refusal policy
-        if should_refuse("rag", conf["score"], grounding):
+        # Refusal policy: only refuse when no usable answer was generated
+        _has_answer = bool(answer and len(answer.strip()) > 30)
+        if should_refuse("rag", conf["score"], grounding) and not _has_answer:
             answer = REFUSAL
             if sources:
                 snippets = "\n".join(f"- {s.get('text_snippet', '')[:100]}" for s in sources[:3])
                 answer += f"\n\nClosest matches found:\n{snippets}"
-
-        # Add disclaimer if medium confidence
+        elif should_refuse("rag", conf["score"], grounding) and _has_answer:
+            answer += "\n\n_⚠️ Low confidence: retrieved context may not fully support this answer. Please verify._"
         elif conf.get("disclaimer"):
             answer += f"\n\n_{conf['disclaimer']}_"
 
@@ -446,12 +513,12 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
         import time as _time_module
         from langchain_core.messages import HumanMessage
         from langchain_ollama import ChatOllama
-        from backend.config import LLM_MODEL
+        from backend.config import get_active_model
         from backend.agents.prompts import KNOWLEDGE_PROMPT
 
         t0 = _time_module.time()
         try:
-            llm = ChatOllama(model=LLM_MODEL, temperature=0)
+            llm = ChatOllama(model=get_active_model(), temperature=0)
             prompt = KNOWLEDGE_PROMPT.format(question=question)
             response = llm.invoke([HumanMessage(content=prompt)])
             answer = (response.content or "").strip()
@@ -487,7 +554,7 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
 
     else:  # hybrid
         result = run_hybrid(
-            question=question,
+            question=rewritten_q,
             conversation_context=conversation_context,
             few_shot_examples=few_shot_examples,
         )
@@ -507,12 +574,15 @@ def _process_query(question: str, session_id: Optional[str] = None) -> Dict[str,
             llm_self_confidence=result.get("confidence", 0.5),
         )
 
-        # Refusal policy (same as RAG)
-        if should_refuse("hybrid", conf["score"], grounding):
+        # Refusal policy: only refuse when no usable answer was generated
+        _has_answer = bool(answer and len(answer.strip()) > 30)
+        if should_refuse("hybrid", conf["score"], grounding) and not _has_answer:
             answer = REFUSAL
             if sources:
                 snippets = "\n".join(f"- {s.get('text_snippet', '')[:100]}" for s in sources[:3])
                 answer += f"\n\nClosest matches found:\n{snippets}"
+        elif should_refuse("hybrid", conf["score"], grounding) and _has_answer:
+            answer += "\n\n_⚠️ Low confidence: retrieved context may not fully support this answer. Please verify._"
         elif conf.get("disclaimer"):
             answer += f"\n\n_{conf['disclaimer']}_"
 
@@ -583,6 +653,7 @@ class FilterRequest(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
+    model: Optional[str] = None  # Per-request model override (e.g. "llama3.2")
 
 
 def _norm(v: Optional[str]) -> Optional[str]:
@@ -662,6 +733,24 @@ def ollama_status():
     from backend.reliability.ollama_health import check_ollama_health
     health = check_ollama_health(force_refresh=True)
     return health.to_dict()
+
+
+@app.get("/api/models")
+def list_models():
+    """Return available Ollama LLM models (excludes embedding-only models)."""
+    import requests as _req
+    from backend.config import LLM_MODEL, OLLAMA_BASE_URL
+
+    EMBED_ONLY = {"nomic-embed-text", "all-minilm", "mxbai-embed-large"}
+    try:
+        resp = _req.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
+        resp.raise_for_status()
+        all_models = [m["name"] for m in resp.json().get("models", [])]
+        llm_models = [m for m in all_models if not any(e in m for e in EMBED_ONLY)]
+        return {"models": llm_models, "current": LLM_MODEL}
+    except Exception as e:
+        logger.warning(f"Could not fetch Ollama models: {e}")
+        return {"models": [LLM_MODEL], "current": LLM_MODEL}
 
 
 @app.get("/api/cache/stats")
@@ -917,31 +1006,26 @@ def get_session_messages(session_id: str):
         return []
 
     rows = conn.execute(
-        """SELECT question, query_type, result_json, created_at
-           FROM runs WHERE session_id = ? ORDER BY created_at ASC""",
+        """SELECT question, query_type, final_answer, sql_generated, confidence, timestamp
+           FROM runs WHERE session_id = ? ORDER BY timestamp ASC""",
         [session_id],
     ).fetchall()
     conn.close()
 
-    import json
     messages = []
     for r in rows:
-        messages.append({"role": "user", "content": r["question"], "timestamp": r["created_at"]})
-        try:
-            result = json.loads(r["result_json"]) if r["result_json"] else {}
-        except (json.JSONDecodeError, TypeError):
-            result = {}
+        messages.append({"role": "user", "content": r["question"], "timestamp": r["timestamp"]})
         messages.append({
             "role": "assistant",
-            "content": result.get("answer", ""),
+            "content": r["final_answer"] or "",
             "query_type": r["query_type"],
-            "sql_generated": result.get("sql_generated"),
-            "confidence": result.get("confidence"),
-            "sources": result.get("sources"),
-            "decomposition": result.get("decomposition"),
-            "hybrid_mode": result.get("hybrid_mode"),
-            "chart_data": result.get("chart_data"),
-            "timestamp": r["created_at"],
+            "sql_generated": r["sql_generated"],
+            "confidence": r["confidence"],
+            "sources": None,
+            "decomposition": None,
+            "hybrid_mode": None,
+            "chart_data": None,
+            "timestamp": r["timestamp"],
         })
     return messages
 
@@ -1250,9 +1334,12 @@ def _dashboard_impl(f: FilterRequest, page: int, page_size: int) -> Dict[str, An
 
 @app.post("/api/query")
 def query_ai(req: QueryRequest):
+    from backend.config import set_thread_model
     question = (req.question or "").strip()
     if not question:
         raise HTTPException(400, "Question required")
+
+    set_thread_model(req.model)
 
     # Auto-create session on first query
     if req.session_id:
@@ -1318,6 +1405,80 @@ def query_ai(req: QueryRequest):
 
         logger.exception(f"Query failed: {e}")
         raise HTTPException(500, detail=str(e))
+
+
+# ---------------------------
+# STREAMING QUERY ENDPOINT
+# ---------------------------
+@app.post("/api/query/stream")
+async def query_ai_stream(req: QueryRequest):
+    """SSE endpoint — emits stage events then final result so the UI shows live progress."""
+    import asyncio, concurrent.futures, json as _json
+    from backend.config import set_thread_model
+
+    question = (req.question or "").strip()
+    if not question:
+        raise HTTPException(400, "Question required")
+
+    if req.session_id:
+        _ensure_session(req.session_id, question[:50])
+
+    _model_override = req.model  # capture for thread closure
+
+    def _run_with_model():
+        set_thread_model(_model_override)
+        return _process_query(question, req.session_id)
+
+    def _sse(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
+
+    async def event_stream():
+        yield _sse({"stage": "routing", "message": "Classifying your query..."})
+
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = loop.run_in_executor(pool, _run_with_model)
+
+            stages = [
+                "Retrieving relevant data...",
+                "Generating answer...",
+                "Applying guardrails...",
+            ]
+            i = 0
+            while not future.done():
+                await asyncio.sleep(3)
+                if not future.done():
+                    yield _sse({"stage": "progress", "message": stages[min(i, len(stages) - 1)]})
+                    i += 1
+
+            response = await future
+
+        # Log run
+        try:
+            from backend.observability.logger import log_run
+            log_run(
+                run_id=response.get("metadata", {}).get("run_id", ""),
+                session_id=req.session_id,
+                question=question,
+                query_type=response.get("query_type", "unknown"),
+                result=response,
+            )
+        except Exception:
+            pass
+
+        if req.session_id:
+            try:
+                _bump_session(req.session_id)
+            except Exception:
+                pass
+
+        yield _sse({"stage": "complete", "result": response})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------------------

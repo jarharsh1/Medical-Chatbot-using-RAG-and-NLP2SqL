@@ -14,7 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
 from backend.agents.prompts import RAG_SYSTEM_PROMPT, RAG_USER_PROMPT
-from backend.config import LLM_MODEL, MMR_TOP_K
+from backend.config import get_active_model, MMR_TOP_K
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ def retrieve_and_generate(
 
     # ---- Generation ----
     t1 = time.time()
-    llm = ChatOllama(model=LLM_MODEL, temperature=0)
+    llm = ChatOllama(model=get_active_model(), temperature=0)
 
     user_prompt = RAG_USER_PROMPT.format(context=context, question=question)
     if conversation_context:

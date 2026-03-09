@@ -18,7 +18,7 @@ from typing import Dict, List, Optional
 
 from backend.config import (
     DB_PATH,
-    LLM_MODEL,
+    get_active_model,
     RERANK_BATCH_SIZE,
     RERANK_ENABLED,
     RERANK_TOP_K,
@@ -170,7 +170,7 @@ def rerank(
             from langchain_ollama import ChatOllama
             from langchain_core.messages import HumanMessage
 
-            llm = ChatOllama(model=LLM_MODEL, temperature=0)
+            llm = ChatOllama(model=get_active_model(), temperature=0)
 
             for i in range(0, len(uncached_docs), RERANK_BATCH_SIZE):
                 batch = uncached_docs[i : i + RERANK_BATCH_SIZE]

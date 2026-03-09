@@ -15,7 +15,7 @@ from typing import Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 
-from backend.config import LLM_MODEL
+from backend.config import get_active_model
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ def rewrite_query(question: str, use_llm: bool = True) -> Tuple[str, bool]:
 
     # Step 3: Use LLM for complex rewrites
     try:
-        llm = ChatOllama(model=LLM_MODEL, temperature=0)
+        llm = ChatOllama(model=get_active_model(), temperature=0)
         prompt = REWRITER_PROMPT.format(question=original)
 
         response = llm.invoke([HumanMessage(content=prompt)])

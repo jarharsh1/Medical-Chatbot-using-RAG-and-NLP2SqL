@@ -6,6 +6,7 @@ let currentPage = 1;
 const pageSize = 50;
 let sessionId = crypto.randomUUID();
 let currentRows = [];
+let selectedModel = null;  // null = use server default
 
 // Dashboard Chart.js instances
 let donutChart = null;
@@ -29,6 +30,7 @@ function formatTimestamp() {
 document.addEventListener('DOMContentLoaded', () => {
     loadFilters();
     loadDashboard();
+    loadModels();
 
     ['clinic', 'doctor', 'condition'].forEach(id => {
         document.getElementById(`filter-${id}`).addEventListener('change', (e) => {
@@ -59,6 +61,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('query-form').addEventListener('submit', handleQuerySubmit);
 
+    // Auto-resize textarea + Enter/Shift+Enter
+    const queryInput = document.getElementById('query-input');
+    queryInput.addEventListener('input', () => {
+        queryInput.style.height = 'auto';
+        queryInput.style.height = Math.min(queryInput.scrollHeight, 200) + 'px';
+    });
+    queryInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('query-form').requestSubmit();
+        }
+    });
+
     // Sidebar init
     _restoreSidebarState();
     loadSessions();
@@ -80,6 +95,69 @@ function switchTab(tab) {
     });
     if (tab === 'query') loadSessions();
 }
+
+async function loadModels() {
+    try {
+        const res = await fetch(`${API_URL}/models`);
+        const data = await res.json();
+        const models = data.models || [];
+        selectedModel = models.includes(data.current) ? data.current : (models[0] || null);
+        _renderModelOptions(models, selectedModel);
+    } catch (e) {
+        console.warn('Could not load models:', e);
+        _renderModelOptions([], null);
+    }
+}
+
+function _renderModelOptions(models, active) {
+    const pill = document.getElementById('model-pill-name');
+    const dropdown = document.getElementById('model-dropdown');
+    if (!pill || !dropdown) return;
+
+    pill.textContent = active || 'Select model';
+    dropdown.innerHTML = '';
+
+    models.forEach(m => {
+        const item = document.createElement('div');
+        item.className = 'model-option' + (m === active ? ' selected' : '');
+        item.innerHTML = `<span>${m}</span><i class="fa-solid fa-check model-check"></i>`;
+        item.onclick = () => {
+            selectedModel = m;
+            pill.textContent = m;
+            dropdown.querySelectorAll('.model-option').forEach(el => el.classList.remove('selected'));
+            item.classList.add('selected');
+            closeModelDropdown();
+        };
+        dropdown.appendChild(item);
+    });
+}
+
+function toggleModelDropdown(e) {
+    if (e) e.stopPropagation();
+    const dropdown = document.getElementById('model-dropdown');
+    const chevron = document.getElementById('model-pill-chevron');
+    if (!dropdown) return;
+    const isOpen = !dropdown.classList.contains('hidden');
+    if (isOpen) {
+        dropdown.classList.add('hidden');
+        chevron && chevron.classList.remove('open');
+    } else {
+        dropdown.classList.remove('hidden');
+        chevron && chevron.classList.add('open');
+    }
+}
+
+function closeModelDropdown() {
+    const dropdown = document.getElementById('model-dropdown');
+    const chevron = document.getElementById('model-pill-chevron');
+    dropdown && dropdown.classList.add('hidden');
+    chevron && chevron.classList.remove('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.model-pill-container')) closeModelDropdown();
+});
 
 // --- DASHBOARD ---
 async function loadFilters() {
@@ -719,6 +797,8 @@ document.addEventListener('keydown', (e) => {
 function fillQuery(text) {
     const input = document.getElementById('query-input');
     input.value = text;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
     input.focus();
 }
 
@@ -728,44 +808,44 @@ function fillQuery(text) {
 const WELCOME_HTML = `
     <div id="nb-welcome" class="nb-welcome">
         <div class="nb-welcome-icon">
-            <i class="fa-solid fa-heart-pulse text-teal-600 text-3xl"></i>
+            <i class="fa-solid fa-heart-pulse text-teal-400 text-3xl"></i>
         </div>
-        <h2 class="text-xl font-bold text-slate-800 mt-4">Ask MediGraph</h2>
-        <p class="text-sm text-slate-500 mt-1.5 max-w-md mx-auto leading-relaxed">
+        <h2 class="text-xl font-bold text-white mt-4">Ask MediGraph</h2>
+        <p class="text-sm text-slate-300 mt-1.5 max-w-md mx-auto leading-relaxed">
             Ask questions about patients, prescriptions, clinical notes, or medical knowledge.
             Everything runs locally — your data never leaves this machine.
         </p>
         <div class="nb-suggestions">
             <button onclick="fillQuery('How many active prescriptions are there?')" class="nb-suggestion-chip">
-                <i class="fa-solid fa-database text-blue-500 text-[10px]"></i>
+                <i class="fa-solid fa-database text-blue-400 text-xs"></i>
                 How many active prescriptions?
             </button>
             <button onclick="fillQuery('What symptoms are described for diabetic patients?')" class="nb-suggestion-chip">
-                <i class="fa-solid fa-book-open text-purple-500 text-[10px]"></i>
+                <i class="fa-solid fa-book-open text-purple-400 text-xs"></i>
                 Symptoms for diabetic patients?
             </button>
             <button onclick="fillQuery('Which clinic has the most diabetes patients? Who are the doctors there?')" class="nb-suggestion-chip">
-                <i class="fa-solid fa-code-merge text-amber-500 text-[10px]"></i>
+                <i class="fa-solid fa-code-merge text-amber-400 text-xs"></i>
                 Top diabetes clinic & doctors?
             </button>
             <button onclick="fillQuery('What is the root cause of hypertension? How many patients have it?')" class="nb-suggestion-chip">
-                <i class="fa-solid fa-sitemap text-emerald-500 text-[10px]"></i>
+                <i class="fa-solid fa-sitemap text-emerald-400 text-xs"></i>
                 Causes & count of hypertension?
             </button>
             <button onclick="fillQuery('List all patients with non-adherent prescriptions')" class="nb-suggestion-chip">
-                <i class="fa-solid fa-triangle-exclamation text-red-400 text-[10px]"></i>
+                <i class="fa-solid fa-triangle-exclamation text-red-400 text-xs"></i>
                 Non-adherent prescriptions?
             </button>
             <button onclick="fillQuery('What medications are commonly prescribed for asthma?')" class="nb-suggestion-chip">
-                <i class="fa-solid fa-pills text-teal-500 text-[10px]"></i>
+                <i class="fa-solid fa-pills text-teal-400 text-xs"></i>
                 Medications for asthma?
             </button>
         </div>
-        <div class="flex items-center justify-center gap-4 mt-6 text-[11px] text-slate-400">
+        <div class="flex items-center justify-center gap-4 mt-6 text-xs text-slate-400">
             <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield-check text-emerald-400"></i> HIPAA Compliant</span>
-            <span class="text-slate-300">&middot;</span>
-            <span class="flex items-center gap-1.5"><i class="fa-solid fa-server text-slate-400"></i> Local Processing</span>
-            <span class="text-slate-300">&middot;</span>
+            <span class="text-slate-500">&middot;</span>
+            <span class="flex items-center gap-1.5"><i class="fa-solid fa-server text-slate-500"></i> Local Processing</span>
+            <span class="text-slate-500">&middot;</span>
             <span class="flex items-center gap-1.5"><i class="fa-solid fa-brain text-teal-400"></i> RAG + SQL</span>
         </div>
     </div>
@@ -905,20 +985,47 @@ async function handleQuerySubmit(e) {
 
     addMessage('user', question);
     input.value = '';
+    input.style.height = 'auto';
 
     const loading = document.getElementById('chat-loading');
+    const stageText = document.getElementById('loading-stage-text');
     loading.classList.remove('hidden');
 
     try {
-        const res = await fetch(`${API_URL}/query`, {
+        const res = await fetch(`${API_URL}/query/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, session_id: sessionId })
+            body: JSON.stringify({ question, session_id: sessionId, model: selectedModel })
         });
-        const data = await res.json();
+
+        if (!res.ok || !res.body) throw new Error('Stream failed');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // keep incomplete line
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const event = JSON.parse(line.slice(6));
+                    if (event.stage === 'routing' || event.stage === 'progress') {
+                        if (stageText) stageText.textContent = event.message;
+                    } else if (event.stage === 'complete') {
+                        loading.classList.add('hidden');
+                        addAIMessage(event.result);
+                        loadSessions();
+                    }
+                } catch (_) {}
+            }
+        }
+
         loading.classList.add('hidden');
-        addAIMessage(data);
-        loadSessions();
     } catch (e) {
         loading.classList.add('hidden');
         addMessage('error', 'Could not reach the backend. Is the server running?');
@@ -936,48 +1043,113 @@ function getQueryTypeBadge(queryType) {
     return `<span class="query-badge ${t.class}"><i class="fa-solid ${t.icon} mr-1"></i>${t.label}</span>`;
 }
 
-function getConfidenceMeter(confidence) {
-    const pct = Math.round((confidence || 0) * 100);
-    let level, color;
-    if (pct >= 70) { level = 'high'; color = 'High confidence'; }
-    else if (pct >= 40) { level = 'medium'; color = 'Moderate confidence'; }
-    else { level = 'low'; color = 'Low confidence'; }
-
-    return `
-        <div class="mt-3 pt-3 border-t border-slate-100">
-            <div class="flex items-center justify-between text-xs mb-1">
-                <span class="text-slate-500">Confidence</span>
-                <span class="font-semibold">${pct}%</span>
-            </div>
-            <div class="confidence-bar">
-                <div class="fill ${level}" style="width: ${pct}%"></div>
-            </div>
-            <p class="text-[10px] text-slate-400 mt-1">${color}</p>
-        </div>
-    `;
-}
-
 function renderSources(sources) {
     if (!sources || sources.length === 0) return '';
-    const toShow = sources.slice(0, 4);
+    const toShow = sources.slice(0, 5);
+    const citedCount = toShow.filter(s => s.cited).length;
 
-    const cards = toShow.map(s => `
-        <div class="source-card">
-            <div class="flex items-center justify-between mb-1">
-                <span class="font-medium text-slate-700">${escapeHtml(s.patient_name || 'Unknown')}</span>
-                ${s.cited ? '<span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">CITED</span>' : ''}
+    const cards = toShow.map((s, i) => `
+        <div class="src-card">
+            <div class="src-card-header">
+                <span class="src-idx">${i + 1}</span>
+                <div class="src-card-info">
+                    <span class="src-patient">${escapeHtml(s.patient_name || 'Unknown Patient')}</span>
+                    <span class="src-meta">${escapeHtml(s.condition || '')}${s.visit_date ? ' · ' + s.visit_date : ''}</span>
+                </div>
+                ${s.cited ? '<span class="src-cited">✓ CITED</span>' : ''}
             </div>
-            <div class="text-[10px] text-slate-400 mb-1">${escapeHtml(s.condition || '')} ${s.visit_date ? '&bull; ' + s.visit_date : ''}</div>
-            <div class="text-slate-500 line-clamp-2">${escapeHtml(s.text_snippet || '')}</div>
+            <div class="src-snippet">${escapeHtml(s.text_snippet || '')}</div>
         </div>
     `).join('');
 
     return `
-        <div class="mt-4 pt-3 border-t border-slate-200">
-            <div class="text-xs text-slate-500 font-semibold flex items-center gap-1.5 mb-2">
-                <i class="fa-solid fa-book-open text-teal-600"></i> Sources (${toShow.length})
+        <details class="src-dropdown">
+            <summary class="src-summary">
+                <span class="src-summary-left">
+                    <i class="fa-solid fa-database text-teal-400"></i>
+                    <span>Retrieved Context</span>
+                    <span class="src-count-badge">${toShow.length}</span>
+                    ${citedCount > 0 ? `<span class="src-cited-badge">${citedCount} cited</span>` : ''}
+                </span>
+                <i class="fa-solid fa-chevron-down src-chevron"></i>
+            </summary>
+            <div class="src-list">${cards}</div>
+        </details>
+    `;
+}
+
+function renderMetrics(data) {
+    const conf = data.confidence || 0;
+    const grounding = data.grounding || {};
+    const signals = (data.metadata && data.metadata.confidence_detail && data.metadata.confidence_detail.signals) || {};
+    const isRAG = data.query_type === 'rag' || data.query_type === 'hybrid';
+
+    // Recall@K: cited_sources / total_retrieved (proxy — true recall needs ground truth labels)
+    const sources = data.sources || [];
+    const K = sources.length;
+    const cited = sources.filter(s => s.cited).length;
+    const recallAtK = isRAG && K > 0 ? cited / K : null;
+
+    const faithfulness = isRAG && grounding.score != null ? grounding.score : null;
+    const answerRelevancy = signals.llm_self_assessment != null ? signals.llm_self_assessment : conf;
+    const contextPrecision = signals.retrieval_margin != null ? signals.retrieval_margin : null;
+
+    const fmt = v => v != null ? Math.round(v * 100) + '%' : '—';
+    const mkBar = (v, color) => `<div class="metric-bar"><div class="metric-fill" style="width:${v != null ? Math.round(v * 100) : 0}%;background:${color}"></div></div>`;
+
+    const overallColor = conf >= 0.7 ? '#10b981' : conf >= 0.4 ? '#f59e0b' : '#ef4444';
+    const metrics = [
+        {
+            label: 'Faithfulness',
+            val: faithfulness,
+            color: '#10b981',
+            desc: isRAG
+                ? `${grounding.supported_sentences ?? '?'}/${grounding.total_sentences ?? '?'} sentences grounded`
+                : 'N/A for SQL queries'
+        },
+        {
+            label: 'Answer Relevancy',
+            val: answerRelevancy,
+            color: '#06b6d4',
+            desc: 'LLM self-assessed confidence'
+        },
+        {
+            label: 'Context Precision',
+            val: contextPrecision,
+            color: '#8b5cf6',
+            desc: isRAG ? 'Top-doc separation (rerank margin)' : 'N/A for SQL queries'
+        },
+        {
+            label: `Recall@${K || 'K'}`,
+            val: recallAtK,
+            color: '#f59e0b',
+            desc: isRAG
+                ? `${cited}/${K} retrieved docs cited · proxy (no ground truth)`
+                : 'N/A for SQL queries'
+        },
+        {
+            label: 'Overall Confidence',
+            val: conf,
+            color: overallColor,
+            desc: conf >= 0.7 ? 'High — answer is reliable' : conf >= 0.4 ? 'Moderate — verify key details' : 'Low — treat with caution'
+        },
+    ];
+
+    const chips = metrics.map((m, i) => `
+        <div class="metric-chip${i === 4 ? ' metric-chip-full' : ''}">
+            <div class="metric-chip-top">
+                <span class="metric-label">${m.label}</span>
+                <span class="metric-value" style="color:${m.color}">${fmt(m.val)}</span>
             </div>
-            <div class="space-y-2">${cards}</div>
+            ${mkBar(m.val, m.color)}
+            <div class="metric-desc">${m.desc}</div>
+        </div>
+    `).join('');
+
+    return `
+        <div class="metrics-panel">
+            <div class="metrics-title"><i class="fa-solid fa-chart-simple mr-1.5 text-teal-400"></i>Evaluation Metrics</div>
+            <div class="metrics-grid">${chips}</div>
         </div>
     `;
 }
@@ -1045,8 +1217,8 @@ function addAIMessage(data) {
     row.className = 'gpt-msg-row';
 
     const badge = getQueryTypeBadge(data.query_type);
-    const confidence = getConfidenceMeter(data.confidence);
     const sources = renderSources(data.sources);
+    const metrics = renderMetrics(data);
     const answer = data.answer || data.result || '';
     const sql = data.sql_generated;
 
@@ -1055,12 +1227,12 @@ function addAIMessage(data) {
         const parts = data.decomposition.sub_questions.map(p =>
             `<div class="flex items-center gap-2 text-xs">
                 <span class="query-badge ${p.route} inline">${p.route.toUpperCase()}</span>
-                <span class="text-slate-500 truncate">${escapeHtml(p.question)}</span>
+                <span class="text-slate-300 truncate">${escapeHtml(p.question)}</span>
             </div>`
         ).join('');
         decompositionHtml = `
-            <div class="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <div class="mb-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
                     Decomposed into ${data.decomposition.parts_count} parts
                 </div>
                 <div class="space-y-1.5">${parts}</div>
@@ -1078,18 +1250,18 @@ function addAIMessage(data) {
 
     row.innerHTML = `
         <div class="gpt-msg-content gpt-msg-ai">
-            <div class="gpt-avatar"><i class="fa-solid fa-sparkles text-white text-[10px]"></i></div>
+            <div class="gpt-avatar">🩺</div>
             <div class="gpt-msg-body">
                 <div class="msg-meta">
                     ${badge}
-                    ${data.hybrid_mode ? `<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full uppercase font-medium">${escapeHtml(data.hybrid_mode)}</span>` : ''}
+                    ${data.hybrid_mode ? `<span class="text-xs px-2 py-0.5 bg-white/10 text-slate-300 rounded-full uppercase font-medium">${escapeHtml(data.hybrid_mode)}</span>` : ''}
                 </div>
                 ${decompositionHtml}
                 ${sql ? `<div class="sql-block mb-3"><span class="comment">// Generated SQL</span><br>${escapeHtml(sql)}</div>` : ''}
-                <div class="prose prose-sm max-w-none prose-slate prose-headings:font-semibold prose-p:text-slate-700 prose-strong:text-slate-800 prose-li:marker:text-teal-500">${marked.parse(answer || '')}</div>
+                <div class="prose prose-sm prose-invert max-w-none prose-headings:font-semibold prose-li:marker:text-teal-400">${marked.parse(answer || '')}</div>
                 ${chartHtml}
                 ${sources}
-                ${confidence}
+                ${metrics}
             </div>
         </div>
     `;
@@ -1111,8 +1283,8 @@ function addMessage(type, content) {
         row.className = 'gpt-msg-row user-row';
         row.innerHTML = `
             <div class="gpt-msg-content">
-                <div class="gpt-user-avatar">You</div>
-                <div class="gpt-msg-body" style="color: #1e293b; font-weight: 500;">
+                <div class="gpt-user-avatar">🧑</div>
+                <div class="gpt-msg-body" style="color: #e2e8f0; font-weight: 500;">
                     ${escapeHtml(content)}
                 </div>
             </div>
@@ -1121,8 +1293,8 @@ function addMessage(type, content) {
         row.className = 'gpt-msg-row';
         row.innerHTML = `
             <div class="gpt-msg-content gpt-msg-ai">
-                <div class="gpt-avatar" style="background: #ef4444;"><i class="fa-solid fa-triangle-exclamation text-white text-[10px]"></i></div>
-                <div class="gpt-msg-body" style="color: #dc2626;">
+                <div class="gpt-avatar" style="background: linear-gradient(135deg, #dc2626, #f97316); box-shadow: 0 0 0 2px rgba(220,38,38,0.35);">⚠️</div>
+                <div class="gpt-msg-body" style="color: #f87171;">
                     <i class="fa-solid fa-triangle-exclamation mr-1"></i>${escapeHtml(content)}
                 </div>
             </div>

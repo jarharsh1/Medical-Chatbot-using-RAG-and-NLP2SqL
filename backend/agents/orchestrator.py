@@ -18,7 +18,7 @@ from langchain_ollama import ChatOllama
 
 from backend.agents.decomposer import decompose_question, is_simple_question
 from backend.agents.prompts import COMBINE_ANSWERS_PROMPT
-from backend.config import LLM_MODEL
+from backend.config import get_active_model
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ def _execute_sub_question(
     elif route == "knowledge":
         # For general knowledge questions, use LLM directly without RAG
         from backend.agents.prompts import KNOWLEDGE_PROMPT
-        llm = ChatOllama(model=LLM_MODEL, temperature=0)
+        llm = ChatOllama(model=get_active_model(), temperature=0)
         prompt = KNOWLEDGE_PROMPT.format(question=question)
 
         try:
@@ -186,7 +186,7 @@ def _combine_answers(
 
     sub_answers_text = "\n\n".join(parts)
 
-    llm = ChatOllama(model=LLM_MODEL, temperature=0)
+    llm = ChatOllama(model=get_active_model(), temperature=0)
     prompt = COMBINE_ANSWERS_PROMPT.format(
         original_question=original_question,
         sub_answers=sub_answers_text,

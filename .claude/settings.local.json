@@ -18,7 +18,17 @@
       "Bash(python:*)",
       "Bash(powershell:*)",
       "Bash(timeout:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(PYTHONPATH=. python:*)",
+      "Bash(ls:*)",
+      "Bash(cmd:*)",
+      "Bash(gh run:*)",
+      "Bash(tasklist:*)",
+      "Bash(ollama list:*)",
+      "Read(//c/actions-work/Medical-Chatbot-using-RAG-and-NLP2SqL/Medical-Chatbot-using-RAG-and-NLP2SqL/**)",
+      "Bash(LLM_MODEL=llama3.1:8b PYTHONPATH=. python -m evaluation.evaluate)",
+      "Bash(taskkill:*)",
+      "Bash(netstat:*)"
     ]
   }
 }

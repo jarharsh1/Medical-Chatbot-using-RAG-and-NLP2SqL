@@ -4,6 +4,7 @@ All paths, model names, thresholds, and feature toggles in one place.
 """
 
 import os
+import threading
 
 # ---------------------------
 # PATHS
@@ -36,6 +37,20 @@ for path in [
 # To switch: ollama pull <model_name>, then change LLM_MODEL below
 LLM_MODEL = os.environ.get("LLM_MODEL", "qwen2.5:14b")
 LLM_TEMPERATURE = 0
+
+# Per-request model override via thread-local (used by model switcher UI)
+_thread_local = threading.local()
+
+
+def get_active_model() -> str:
+    """Return the model for the current thread (falls back to LLM_MODEL)."""
+    return getattr(_thread_local, "model_override", None) or LLM_MODEL
+
+
+def set_thread_model(model: str | None) -> None:
+    """Set (or clear) a per-request model override for the current thread."""
+    _thread_local.model_override = model or None
+
 EMBED_MODEL = "nomic-embed-text"
 EMBED_MODEL_VERSION = "1.0"
 EMBED_DIMENSIONS = 768
@@ -54,7 +69,7 @@ SEMANTIC_TOP_K = 20
 RRF_K = 60              # RRF constant
 RERANK_TOP_K = 15        # docs to keep after re-ranking
 RERANK_BATCH_SIZE = 5    # docs per LLM rerank call
-RERANK_ENABLED = True    # set False to skip re-ranking for low-latency mode
+RERANK_ENABLED = False   # disabled: LLM reranker adds 150-200s latency on CPU; RRF scores sufficient
 MMR_LAMBDA = 0.7         # 0.7 relevance, 0.3 diversity
 MMR_TOP_K = 8            # final docs after MMR
 

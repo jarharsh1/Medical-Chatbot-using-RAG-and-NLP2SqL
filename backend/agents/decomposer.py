@@ -15,7 +15,7 @@ from langchain_core.messages import HumanMessage
 from langchain_ollama import ChatOllama
 
 from backend.agents.prompts import DECOMPOSE_PROMPT
-from backend.config import LLM_MODEL
+from backend.config import get_active_model
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def decompose_question(question: str) -> List[Dict[str, Any]]:
     For simple questions, returns single-element list.
     """
     try:
-        llm = ChatOllama(model=LLM_MODEL, temperature=0)
+        llm = ChatOllama(model=get_active_model(), temperature=0)
         prompt = DECOMPOSE_PROMPT.format(question=question)
         response = llm.invoke([HumanMessage(content=prompt)])
         raw = (response.content or "").strip()

@@ -92,13 +92,22 @@ def compute_confidence(
 
 
 def should_refuse(query_type: str, confidence_score: float, grounding_result: Optional[Dict] = None) -> bool:
-    """Check if the system should refuse to answer (low confidence + grounding failure)."""
-    thresholds = CONFIDENCE_THRESHOLDS.get(query_type, CONFIDENCE_THRESHOLDS["rag"])
-    if confidence_score < thresholds["low"]:
-        if grounding_result and not grounding_result.get("is_grounded", True):
-            return True
-        if confidence_score < thresholds["low"] * 0.5:
-            return True
+    """
+    Check if the system should refuse to answer.
+
+    Refuse only when BOTH conditions hold:
+      1. Confidence is essentially zero (< 0.05) — pipeline truly failed
+      2. Grounding check explicitly failed (is_grounded=False)
+
+    A low-but-nonzero confidence with a generated answer gets a disclaimer
+    (handled by the medium level), not a hard refusal.
+    """
+    # Hard refusal: confidence is essentially zero AND grounding failed
+    if confidence_score < 0.05 and grounding_result and not grounding_result.get("is_grounded", True):
+        return True
+    # Hard refusal: confidence is literally 0.0 (pipeline error, no answer generated)
+    if confidence_score == 0.0:
+        return True
     return False
 
 
